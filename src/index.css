@@ -2,9 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-primary: #0a0f1e;
+  --bg-secondary: #111827;
+  --bg-panel: #0d1426;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-ui: #1a2744;
+  --accent: #3b82f6;
+  --map-container-bg: #0a0f1e;
+  --header-bg: #0a0f1e;
+  --header-border-bottom: #1a2744;
+  --header-title: #f1f5f9;
+  --header-subtitle: #334155;
+  --header-badge-bg: #1e293b;
+  --header-badge-border: #334155;
+  --header-tab-inactive: #475569;
+  --header-tab-hover: #94a3b8;
+  --header-tab-hover-border: #1e293b;
+  --legend-bg: rgba(13, 20, 38, 0.8);
+  --stats-panel-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
+}
+
+html.light-theme {
+  --bg-primary: #f0f4f8;
+  --bg-secondary: #ffffff;
+  --bg-panel: #ffffff;
+  --text-primary: #1a1a2e;
+  --text-secondary: #64748b;
+  --text-muted: #64748b;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --border-ui: rgba(0, 0, 0, 0.12);
+  --accent: #2563eb;
+  --map-container-bg: #e2e8f0;
+  --header-bg: #f0f4f8;
+  --header-border-bottom: rgba(0, 0, 0, 0.08);
+  --header-title: #1a1a2e;
+  --header-subtitle: #64748b;
+  --header-badge-bg: #ffffff;
+  --header-badge-border: rgba(0, 0, 0, 0.12);
+  --header-tab-inactive: #475569;
+  --header-tab-hover: #1a1a2e;
+  --header-tab-hover-border: rgba(0, 0, 0, 0.15);
+  --legend-bg: rgba(255, 255, 255, 0.92);
+  --stats-panel-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
 @layer base {
   body {
-    @apply bg-background text-text-primary font-sans overflow-hidden selection:bg-accent/30;
+    @apply bg-background text-text-primary font-sans overflow-hidden;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 }
 
@@ -18,6 +70,10 @@
   );
   background-size: 100% 4px;
   pointer-events: none;
+}
+
+html.light-theme .scanline {
+  opacity: 0.35;
 }
 
 @keyframes mapFadeIn {
@@ -35,8 +91,7 @@
   opacity: 0;
   animation: mapFadeIn 0.5s ease forwards;
 
-
   .leaflet-container {
-    background: #0a0f1e;
+    background: var(--map-container-bg);
   }
 }

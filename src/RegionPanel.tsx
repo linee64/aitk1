@@ -1,6 +1,138 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
 import type { ActiveLayer, RegionData, StatusType } from './types';
+import type { AppTheme } from './theme';
+
+type PanelPalette = {
+  panelBg: string;
+  panelBorderLeft: string;
+  panelShadow: string;
+  title: string;
+  closeBg: string;
+  closeBorder: string;
+  closeColor: string;
+  closeHoverBg: string;
+  kpiCardBg: string;
+  kpiCardBorder: string;
+  kpiValue: string;
+  muted: string;
+  sectionBg: string;
+  sectionBorder: string;
+  barTrack: string;
+  chartGrid: string;
+  chartTick: string;
+  tooltipBg: string;
+  tooltipBorder: string;
+  tooltipColor: string;
+  tooltipLabel: string;
+  tooltipCursor: string;
+  aiPlaceholderBg: string;
+  aiPlaceholderBorder: string;
+  aiPlaceholderSub: string;
+  aiPlaceholderHint: string;
+  scrollThumb: string;
+  aiHead: string;
+  aiSub: string;
+  aiChipBg: string;
+  aiChipBorder: string;
+  aiChipColor: string;
+  aiBoxFrom: string;
+  aiBoxTo: string;
+  aiBoxBorder: string;
+  aiDot: string;
+};
+
+function panelPalette(theme: AppTheme): PanelPalette {
+  if (theme === 'light') {
+    return {
+      panelBg: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+      panelBorderLeft: '1px solid rgba(0,0,0,0.1)',
+      panelShadow: '-8px 0 32px rgba(0,0,0,0.08)',
+      title: '#1a1a2e',
+      closeBg: '#f1f5f9',
+      closeBorder: 'rgba(0,0,0,0.12)',
+      closeColor: '#1a1a2e',
+      closeHoverBg: '#ef4444',
+      kpiCardBg: '#f8fafc',
+      kpiCardBorder: '#e2e8f0',
+      kpiValue: '#1a1a2e',
+      muted: '#64748b',
+      sectionBg: '#f8fafc',
+      sectionBorder: '#e2e8f0',
+      barTrack: '#e2e8f0',
+      chartGrid: '#e2e8f0',
+      chartTick: '#64748b',
+      tooltipBg: '#ffffff',
+      tooltipBorder: 'rgba(0,0,0,0.12)',
+      tooltipColor: '#1a1a2e',
+      tooltipLabel: '#64748b',
+      tooltipCursor: 'rgba(37,99,235,0.12)',
+      aiPlaceholderBg: '#f8fafc',
+      aiPlaceholderBorder: '#e2e8f0',
+      aiPlaceholderSub: '#64748b',
+      aiPlaceholderHint: '#94a3b8',
+      scrollThumb: '#cbd5e1',
+      aiHead: '#1a1a2e',
+      aiSub: '#64748b',
+      aiChipBg: '#eef2ff',
+      aiChipBorder: '#818cf8',
+      aiChipColor: '#4f46e5',
+      aiBoxFrom: '#eef2ff',
+      aiBoxTo: '#f8fafc',
+      aiBoxBorder: '#c7d2fe',
+      aiDot: '#6366f1',
+    };
+  }
+  return {
+    panelBg: 'linear-gradient(180deg, #0d1426 0%, #0a0f1e 100%)',
+    panelBorderLeft: '1px solid #1a2744',
+    panelShadow: 'none',
+    title: '#f1f5f9',
+    closeBg: '#1a2744',
+    closeBorder: '#1e293b',
+    closeColor: '#e2e8f0',
+    closeHoverBg: '#ef4444',
+    kpiCardBg: '#111827',
+    kpiCardBorder: '#1e293b',
+    kpiValue: '#ffffff',
+    muted: '#64748b',
+    sectionBg: '#111827',
+    sectionBorder: '#1e293b',
+    barTrack: '#1e293b',
+    chartGrid: '#1e293b',
+    chartTick: '#475569',
+    tooltipBg: '#0d1426',
+    tooltipBorder: '#1a2744',
+    tooltipColor: '#e2e8f0',
+    tooltipLabel: '#94a3b8',
+    tooltipCursor: 'rgba(59,130,246,0.08)',
+    aiPlaceholderBg: '#111827',
+    aiPlaceholderBorder: '#1e293b',
+    aiPlaceholderSub: '#475569',
+    aiPlaceholderHint: '#334155',
+    scrollThumb: '#1e293b',
+    aiHead: '#e2e8f0',
+    aiSub: '#64748b',
+    aiChipBg: '#1e1b4b',
+    aiChipBorder: '#818cf8',
+    aiChipColor: '#a5b4fc',
+    aiBoxFrom: '#0f172a',
+    aiBoxTo: '#1e1b4b',
+    aiBoxBorder: '#3730a3',
+    aiDot: '#818cf8',
+  };
+}
+
+export function MaterialSymbolsClose(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...props}>
+      <path
+        fill="currentColor"
+        d="M6.4 19L5 17.6l5.6-5.6L5 6.4L6.4 5l5.6 5.6L17.6 5L19 6.4L13.4 12l5.6 5.6l-1.4 1.4l-5.6-5.6z"
+      />
+    </svg>
+  );
+}
 
 export function MaterialSymbolsLightBarChart4Bars(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -34,6 +166,7 @@ const statusTag = (status: StatusType) => {
 type TrendPoint = { month: string; value: number };
 
 interface RegionPanelProps {
+  theme: AppTheme;
   open: boolean;
   region: RegionData | null;
   regionDisplayName: string;
@@ -43,6 +176,7 @@ interface RegionPanelProps {
 }
 
 export const RegionPanel: React.FC<RegionPanelProps> = ({
+  theme,
   open,
   region,
   regionDisplayName,
@@ -50,6 +184,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   onClose,
   onAIRequest,
 }) => {
+  const pt = panelPalette(theme);
   const overallStatus = region ? region.overallStatus : ('low' as StatusType);
   const layerStatus = region ? region[activeLayer].status : ('low' as StatusType);
   const overallAccent = statusColor(overallStatus);
@@ -91,15 +226,15 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   const threatFillPct = layerStatus === 'high' ? 0.9 : layerStatus === 'medium' ? 0.55 : 0.2;
 
   const sectionCard: React.CSSProperties = {
-    background: '#111827',
-    border: '1px solid #1e293b',
+    background: pt.sectionBg,
+    border: `1px solid ${pt.sectionBorder}`,
     borderRadius: 12,
     padding: 12,
   };
 
   const kpiCardBase: React.CSSProperties = {
-    background: '#111827',
-    border: '1px solid #1e293b',
+    background: pt.kpiCardBg,
+    border: `1px solid ${pt.kpiCardBorder}`,
     borderRadius: 12,
     padding: 14,
     minHeight: 106,
@@ -122,14 +257,16 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         top: 0,
         height: '100%',
         width: 380,
-        background: 'linear-gradient(180deg, #0d1426 0%, #0a0f1e 100%)',
-        borderLeft: '1px solid #1a2744',
+        background: pt.panelBg,
+        borderLeft: pt.panelBorderLeft,
+        boxShadow: pt.panelShadow,
         borderTop: `2px solid ${overallAccent}`,
         transform: open ? 'translateX(0)' : 'translateX(100%)',
         transition: 'transform 300ms ease',
-        zIndex: 1000,
+        zIndex: 1100,
         pointerEvents: open ? 'auto' : 'none',
         padding: 20,
+        paddingTop: 56,
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
@@ -140,7 +277,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
       <style>{`
         .region-panel::-webkit-scrollbar { width: 4px; }
         .region-panel::-webkit-scrollbar-track { background: transparent; }
-        .region-panel::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 999px; }
+        .region-panel::-webkit-scrollbar-thumb { background: ${pt.scrollThumb}; border-radius: 999px; }
 
         @keyframes pulseDot {
           0%, 100% { transform: scale(1); opacity: 0.9; }
@@ -148,14 +285,53 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
-        <div style={{ minWidth: 0 }}>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Закрыть панель"
+        style={{
+          position: 'absolute',
+          top: 14,
+          right: 14,
+          zIndex: 30,
+          width: 44,
+          height: 44,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: theme === 'dark' ? 'rgba(15, 23, 42, 0.92)' : '#ffffff',
+          border: theme === 'dark' ? '2px solid rgba(248, 250, 252, 0.35)' : '2px solid rgba(0,0,0,0.12)',
+          color: theme === 'dark' ? '#f8fafc' : '#1a1a2e',
+          borderRadius: 12,
+          cursor: 'pointer',
+          boxShadow: theme === 'dark' ? '0 4px 20px rgba(0,0,0,0.45)' : '0 4px 16px rgba(0,0,0,0.12)',
+          transition: 'background 150ms ease, transform 150ms ease, border-color 150ms ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = pt.closeHoverBg;
+          e.currentTarget.style.color = '#ffffff';
+          e.currentTarget.style.borderColor = 'rgba(248,250,252,0.5)';
+          e.currentTarget.style.transform = 'scale(1.04)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = theme === 'dark' ? 'rgba(15, 23, 42, 0.92)' : '#ffffff';
+          e.currentTarget.style.color = theme === 'dark' ? '#f8fafc' : '#1a1a2e';
+          e.currentTarget.style.borderColor =
+            theme === 'dark' ? 'rgba(248, 250, 252, 0.35)' : 'rgba(0,0,0,0.12)';
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+      >
+        <MaterialSymbolsClose style={{ width: 24, height: 24 }} aria-hidden />
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 14, paddingRight: 8 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
               fontFamily: fontMono,
               fontSize: 22,
               fontWeight: 600,
-              color: '#f1f5f9',
+              color: pt.title,
               lineHeight: 1.2,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -170,33 +346,6 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
             </span>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            width: 28,
-            height: 28,
-            background: '#1a2744',
-            border: '1px solid #1e293b',
-            color: '#e2e8f0',
-            borderRadius: 10,
-            fontSize: 18,
-            lineHeight: '26px',
-            cursor: 'pointer',
-            transition: 'background 150ms ease',
-            flex: '0 0 auto',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#ef4444';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = '#1a2744';
-          }}
-          aria-label="Close"
-        >
-          ×
-        </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -212,7 +361,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
                 (e.currentTarget as HTMLDivElement).style.borderColor = c;
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLDivElement).style.borderColor = '#1e293b';
+                (e.currentTarget as HTMLDivElement).style.borderColor = pt.kpiCardBorder;
               }}
             >
               <div>
@@ -221,7 +370,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
                     fontFamily: fontMono,
                     fontSize: 28,
                     fontWeight: 700,
-                    color: '#ffffff',
+                    color: pt.kpiValue,
                     lineHeight: 1.1,
                   }}
                 >
@@ -246,7 +395,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
               <div
                 style={{
                   fontSize: 11,
-                  color: '#64748b',
+                  color: pt.muted,
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
                 }}
@@ -277,8 +426,8 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
       </div>
 
       <div style={sectionCard}>
-        <div style={{ fontSize: 11, color: '#64748b', fontFamily: fontMono, marginBottom: 10 }}>Уровень угрозы</div>
-        <div style={{ width: '100%', height: 6, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ fontSize: 11, color: pt.muted, fontFamily: fontMono, marginBottom: 10 }}>Уровень угрозы</div>
+        <div style={{ width: '100%', height: 6, background: pt.barTrack, borderRadius: 3, overflow: 'hidden' }}>
           <div
             style={{
               width: `${Math.round(threatFillPct * 100)}%`,
@@ -304,7 +453,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
       </div>
 
       <div style={{ ...sectionCard, padding: 12 }}>
-        <div style={{ fontSize: 12, color: '#64748b', fontFamily: fontMono, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        <div style={{ fontSize: 12, color: pt.muted, fontFamily: fontMono, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Динамика за 6 месяцев
         </div>
         <div style={{ marginTop: 10, width: '100%', height: 160 }}>
@@ -320,18 +469,18 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
               }}
               onMouseLeave={() => setTrendHoverIndex(null)}
             >
-              <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <CartesianGrid stroke={pt.chartGrid} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: pt.chartTick, fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip
-                cursor={{ fill: 'rgba(59,130,246,0.08)' }}
+                cursor={{ fill: pt.tooltipCursor }}
                 contentStyle={{
-                  background: '#0d1426',
-                  border: '1px solid #1a2744',
+                  background: pt.tooltipBg,
+                  border: `1px solid ${pt.tooltipBorder}`,
                   borderRadius: 10,
-                  color: '#e2e8f0',
+                  color: pt.tooltipColor,
                   fontSize: 12,
                 }}
-                labelStyle={{ color: '#94a3b8' }}
+                labelStyle={{ color: pt.tooltipLabel }}
               />
               <ReferenceLine
                 y={avg}
@@ -357,7 +506,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
 
       <div style={{ ...sectionCard, padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-          <div style={{ fontFamily: fontMono, fontSize: 12, color: '#e2e8f0' }}>AI Прогнозирование</div>
+          <div style={{ fontFamily: fontMono, fontSize: 12, color: pt.aiHead }}>AI Прогнозирование</div>
           <div
             style={{
               fontFamily: fontMono,
@@ -375,8 +524,8 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         <div
           style={{
             height: 120,
-            background: '#111827',
-            border: '1px dashed #1e293b',
+            background: pt.aiPlaceholderBg,
+            border: `1px dashed ${pt.aiPlaceholderBorder}`,
             borderRadius: 12,
             display: 'flex',
             flexDirection: 'column',
@@ -390,33 +539,33 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
           <div style={{ fontSize: 24, lineHeight: 1, color: '#3b82f6', display: 'inline-flex' }}>
             <MaterialSymbolsLightBarChart4Bars />
           </div>
-          <div style={{ fontSize: 12, color: '#475569' }}>Прогноз и аномалии появятся здесь</div>
-          <div style={{ fontSize: 11, color: '#334155' }}>Подключите AI-модуль в настройках</div>
+          <div style={{ fontSize: 12, color: pt.aiPlaceholderSub }}>Прогноз и аномалии появятся здесь</div>
+          <div style={{ fontSize: 11, color: pt.aiPlaceholderHint }}>Подключите AI-модуль в настройках</div>
         </div>
       </div>
 
       <div
         style={{
-          background: 'linear-gradient(135deg, #0f172a, #1e1b4b)',
-          border: '1px solid #3730a3',
+          background: `linear-gradient(135deg, ${pt.aiBoxFrom}, ${pt.aiBoxTo})`,
+          border: `1px solid ${pt.aiBoxBorder}`,
           borderRadius: 12,
           padding: 16,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ fontFamily: fontMono, fontSize: 13, color: '#818cf8' }}>AI Анализ</div>
+          <div style={{ fontFamily: fontMono, fontSize: 13, color: theme === 'light' ? '#4f46e5' : '#818cf8' }}>AI Анализ</div>
           <div
             style={{
               width: 8,
               height: 8,
               borderRadius: 999,
-              background: '#818cf8',
+              background: pt.aiDot,
               animation: 'pulseDot 1.2s ease-in-out infinite',
             }}
           />
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+        <div style={{ marginTop: 10, fontSize: 12, color: pt.aiSub, lineHeight: 1.5 }}>
           Получите анализ ситуации и рекомендации по трём ключевым вопросам
         </div>
 
@@ -430,9 +579,9 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
                 gap: 6,
                 padding: '4px 10px',
                 borderRadius: 999,
-                background: '#1e1b4b',
-                border: '1px solid #818cf8',
-                color: '#a5b4fc',
+                background: pt.aiChipBg,
+                border: `1px solid ${pt.aiChipBorder}`,
+                color: pt.aiChipColor,
                 fontSize: 11,
                 fontFamily: fontMono,
               }}

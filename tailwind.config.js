@@ -7,19 +7,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0a0f1e',
-        panel: '#0d1426',
-        border: '#1a2744',
-        accent: '#3b82f6',
+        background: 'var(--bg-primary)',
+        panel: 'var(--bg-panel)',
+        border: 'var(--border-ui)',
+        accent: 'var(--accent)',
         status: {
           high: '#ef4444',
           medium: '#f59e0b',
           low: '#22c55e',
         },
         text: {
-          primary: '#e2e8f0',
-          muted: '#64748b',
-        }
+          primary: 'var(--text-primary)',
+          muted: 'var(--text-muted)',
+        },
       },
       fontFamily: {
         mono: ['Space Mono', 'IBM Plex Mono', 'monospace'],

@@ -11,8 +11,10 @@ import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { mockRegionData } from './mockRegionData';
 import type { ActiveLayer } from './types';
 import { RegionPanel } from './RegionPanel';
+import type { AppTheme } from './theme';
 
 interface KazakhstanMapProps {
+  theme: AppTheme;
   selectedRegion: string | null;
   onRegionSelect: (regionId: string) => void;
   activeLayer: 'ecology' | 'transport' | 'safety' | 'housing';
@@ -28,7 +30,8 @@ const CARTO_LIGHT_ALL =
 
 const TILE_ATTRIBUTION = '© OpenStreetMap contributors © CARTO';
 
-const TILE_PANE_FILTER = 'invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)';
+const TILE_PANE_FILTER_DARK = 'invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)';
+const TILE_PANE_FILTER_LIGHT = 'brightness(1.05) contrast(0.95)';
 
 const kazakhstanBounds = L.latLngBounds([40.5, 49.5], [55.5, 87.5]);
 const kazakhstanMaxBounds = kazakhstanBounds.pad(0.1);
@@ -107,13 +110,124 @@ function PositronTileLayer({ onLoadingChange }: { onLoadingChange: (loading: boo
   );
 }
 
+type MapContentProps = {
+  theme: AppTheme;
+  geojsonData: FeatureCollection<Geometry, any> | null;
+  maskPolygon: { outer: [number, number][]; holes: [number, number][][] } | null;
+  onRegionSelect: (regionId: string) => void;
+  regionByName: Map<string, (typeof mockRegionData)[number]>;
+  getRegionStyleRef: React.MutableRefObject<(feature: Feature<Geometry, any>) => PathOptions>;
+  geoJsonLayerRef: React.MutableRefObject<L.GeoJSON | null>;
+  maskLayerRef: React.MutableRefObject<L.Polygon | null>;
+  activeLayer: ActiveLayer;
+  selectedMockKey: string | null;
+};
+
+function MapContent({
+  theme,
+  geojsonData,
+  maskPolygon,
+  onRegionSelect,
+  regionByName,
+  getRegionStyleRef,
+  geoJsonLayerRef,
+  maskLayerRef,
+  activeLayer,
+  selectedMockKey,
+}: MapContentProps) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setMaxBounds(kazakhstanMaxBounds);
+    map.fitBounds(kazakhstanBounds);
+    map.setView([48.0, 68.0], 5);
+  }, [map]);
+
+  useEffect(() => {
+    const pane = map.getPane('tilePane');
+    if (!pane) return;
+    pane.style.filter = theme === 'dark' ? TILE_PANE_FILTER_DARK : TILE_PANE_FILTER_LIGHT;
+    return () => {
+      pane.style.filter = '';
+    };
+  }, [map, theme]);
+
+  useEffect(() => {
+    const onMapClick = () => {
+      onRegionSelect('');
+    };
+    map.on('click', onMapClick);
+    return () => {
+      map.off('click', onMapClick);
+    };
+  }, [map, onRegionSelect]);
+
+  useEffect(() => {
+    if (!geojsonData) return;
+
+    if (!maskLayerRef.current && maskPolygon) {
+      maskLayerRef.current = L.polygon([maskPolygon.outer, ...maskPolygon.holes], {
+        fillColor: 'rgba(0,0,0,0.45)',
+        fillOpacity: 0.45,
+        color: 'rgba(0,0,0,0)',
+        weight: 0,
+        opacity: 0,
+        interactive: false,
+      } as PathOptions).addTo(map);
+    }
+
+    if (!geoJsonLayerRef.current) {
+      geoJsonLayerRef.current = L.geoJSON(geojsonData as any, {
+        interactive: true,
+        bubblingMouseEvents: false,
+        style: (feature) => getRegionStyleRef.current(feature as Feature<Geometry, any>),
+        onEachFeature: (feature: any, layer: L.Layer) => {
+          const pathLayer = layer as L.Path;
+          const geoName = getFeatureRegionName(feature as Feature<Geometry, any>);
+          const mock = regionByName.get(normalizeGeoNameToMockKey(geoName));
+
+          pathLayer.on('mouseover', () => {
+            const base = getRegionStyleRef.current(feature as Feature<Geometry, any>);
+            const border = typeof base.color === 'string' ? base.color : '#3b82f6';
+            pathLayer.setStyle({
+              ...base,
+              fillColor: border,
+              fillOpacity: 0.08,
+            });
+          });
+
+          pathLayer.on('mouseout', () => {
+            pathLayer.setStyle(getRegionStyleRef.current(feature as Feature<Geometry, any>));
+          });
+
+          pathLayer.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onRegionSelect(mock?.id ?? '');
+          });
+        },
+      }).addTo(map);
+    }
+  }, [map, geojsonData, maskPolygon, onRegionSelect, regionByName, getRegionStyleRef, geoJsonLayerRef, maskLayerRef]);
+
+  useEffect(() => {
+    if (!geoJsonLayerRef.current) return;
+    geoJsonLayerRef.current.setStyle((feature) =>
+      getRegionStyleRef.current(feature as Feature<Geometry, any>),
+    );
+  }, [activeLayer, selectedMockKey, regionByName, theme, geoJsonLayerRef, getRegionStyleRef]);
+
+  return null;
+}
+
 const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
+  theme,
   selectedRegion,
   onRegionSelect,
   activeLayer,
   onAIRequest,
   onActiveLayerChange: _onActiveLayerChange,
 }) => {
+  const regionLineWeight = theme === 'light' ? 2.5 : 2;
   const [geojsonData, setGeojsonData] = useState<FeatureCollection<Geometry, any> | null>(null);
   const [tilesLoading, setTilesLoading] = useState(false);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
@@ -169,13 +283,14 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
     (feature: Feature<Geometry, any>): PathOptions => {
       const geoName = getFeatureRegionName(feature);
       const mockKey = normalizeGeoNameToMockKey(geoName);
+      const w = regionLineWeight;
 
       if (selectedMockKey && mockKey === selectedMockKey) {
         return {
           fillColor: 'transparent',
           fillOpacity: 0,
           color: '#60a5fa',
-          weight: 2,
+          weight: w,
           opacity: 1,
         };
       }
@@ -186,7 +301,7 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
           fillColor: 'transparent',
           fillOpacity: 0,
           color: '#1a3a6b',
-          weight: 2,
+          weight: w,
           opacity: 1,
         };
       }
@@ -196,11 +311,11 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
         fillColor: 'transparent',
         fillOpacity: 0,
         color: statusBorderColor(status),
-        weight: 2,
+        weight: w,
         opacity: 1,
       };
     },
-    [activeLayer, selectedMockKey, regionByName],
+    [activeLayer, selectedMockKey, regionByName, regionLineWeight],
   );
 
   const getRegionStyleRef = useRef(getRegionStyle);
@@ -208,99 +323,16 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
 
   const isPanelOpen = !!selectedRegionSafe;
 
-  const MapLayers = () => {
-    const map = useMap();
-
-    useEffect(() => {
-      map.setMaxBounds(kazakhstanMaxBounds);
-      map.fitBounds(kazakhstanBounds);
-      map.setView([48.0, 68.0], 5);
-    }, [map]);
-
-    useEffect(() => {
-      const pane = map.getPane('tilePane');
-      if (pane) pane.style.filter = TILE_PANE_FILTER;
-      return () => {
-        if (pane) pane.style.filter = '';
-      };
-    }, [map]);
-
-    useEffect(() => {
-      const onMapClick = () => {
-        onRegionSelect('');
-      };
-      map.on('click', onMapClick);
-      return () => {
-        map.off('click', onMapClick);
-      };
-    }, [map, onRegionSelect]);
-
-    useEffect(() => {
-      if (!geojsonData) return;
-
-      if (!maskLayerRef.current && maskPolygon) {
-        maskLayerRef.current = L.polygon([maskPolygon.outer, ...maskPolygon.holes], {
-          fillColor: 'rgba(0,0,0,0.45)',
-          fillOpacity: 0.45,
-          color: 'rgba(0,0,0,0)',
-          weight: 0,
-          opacity: 0,
-          interactive: false,
-        } as PathOptions).addTo(map);
-      }
-
-      if (!geoJsonLayerRef.current) {
-        geoJsonLayerRef.current = L.geoJSON(geojsonData as any, {
-          interactive: true,
-          bubblingMouseEvents: false,
-          style: (feature) => getRegionStyleRef.current(feature as Feature<Geometry, any>),
-          onEachFeature: (feature: any, layer: L.Layer) => {
-            const pathLayer = layer as L.Path;
-            const geoName = getFeatureRegionName(feature as Feature<Geometry, any>);
-            const mock = regionByName.get(normalizeGeoNameToMockKey(geoName));
-
-            pathLayer.on('mouseover', () => {
-              const base = getRegionStyleRef.current(feature as Feature<Geometry, any>);
-              const border = typeof base.color === 'string' ? base.color : '#3b82f6';
-              pathLayer.setStyle({
-                ...base,
-                fillColor: border,
-                fillOpacity: 0.08,
-              });
-            });
-
-            pathLayer.on('mouseout', () => {
-              pathLayer.setStyle(getRegionStyleRef.current(feature as Feature<Geometry, any>));
-            });
-
-            pathLayer.on('click', () => {
-              onRegionSelect(mock?.id ?? '');
-            });
-          },
-        }).addTo(map);
-      }
-    }, [map, geojsonData, maskPolygon, onRegionSelect]);
-
-    useEffect(() => {
-      if (!geoJsonLayerRef.current) return;
-      geoJsonLayerRef.current.setStyle((feature) =>
-        getRegionStyleRef.current(feature as Feature<Geometry, any>),
-      );
-    }, [activeLayer, selectedMockKey, regionByName]);
-
-    return null;
-  };
-
   return (
-    <div style={{ position: 'relative', width: '100%', height: 600 }}>
+    <div className="map-region" style={{ position: 'relative', width: '100%', height: 600 }}>
       <style>{`
         .leaflet-control-attribution {
-          background: rgba(10, 15, 30, 0.85) !important;
-          color: rgba(226, 232, 240, 0.75) !important;
+          background: var(--legend-bg) !important;
+          color: var(--text-secondary) !important;
           font-size: 10px !important;
           max-width: 50%;
         }
-        .leaflet-control-attribution a { color: #93c5fd !important; }
+        .leaflet-control-attribution a { color: var(--accent) !important; }
       `}</style>
 
       <div
@@ -358,11 +390,23 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
           style={{ width: '100%', height: '600px' }}
         >
           <PositronTileLayer onLoadingChange={setTilesLoading} />
-          <MapLayers />
+          <MapContent
+            theme={theme}
+            geojsonData={geojsonData}
+            maskPolygon={maskPolygon}
+            onRegionSelect={onRegionSelect}
+            regionByName={regionByName}
+            getRegionStyleRef={getRegionStyleRef}
+            geoJsonLayerRef={geoJsonLayerRef}
+            maskLayerRef={maskLayerRef}
+            activeLayer={activeLayer}
+            selectedMockKey={selectedMockKey}
+          />
         </MapContainer>
       </div>
 
       <RegionPanel
+        theme={theme}
         open={isPanelOpen}
         region={selectedRegionData}
         regionDisplayName={selectedRegionData?.name ?? selectedRegionSafe ?? ''}
