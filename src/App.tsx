@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { KazakhstanMap } from './KazakhstanMap';
+import { Header } from './Header';
 import type { ActiveLayer } from './types';
 import { motion } from 'framer-motion';
-import { Leaf, Car, Activity } from 'lucide-react';
 import { mockRegionData } from './mockRegionData';
 
 function App() {
@@ -14,100 +14,13 @@ function App() {
     return mockRegionData.find(r => r.id === selectedRegionId);
   }, [selectedRegionId]);
 
-  const tabs = [
-    { id: 'ecology', label: 'Экология', icon: <Leaf style={{ width: 18, height: 18 }} /> },
-    { id: 'transport', label: 'Транспорт', icon: <Car style={{ width: 18, height: 18 }} /> },
-  ];
-
   return (
-    <div className="relative w-screen h-screen bg-background text-text-primary overflow-hidden font-sans">
-      <style>{`
-        @media (max-width: 768px) {
-          .tab-label { display: none; }
-        }
-      `}</style>
+    <div className="relative flex flex-col w-screen h-screen bg-background text-text-primary overflow-hidden font-sans">
+      <Header activeLayer={activeLayer} onLayerChange={setActiveLayer} />
+
+      <div className="relative flex-1 min-h-0">
       {/* Scanline Overlay */}
-      <div className="absolute inset-0 scanline z-50 mix-blend-overlay"></div>
-
-      {/* Header */}
-      <header
-        className="absolute top-0 left-0 right-0 z-40 pointer-events-none"
-        style={{
-          height: 64,
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#0a0f1e',
-          borderBottom: '1px solid #1a2744',
-        }}
-      >
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ display: 'flex', alignItems: 'center', gap: 10 }}
-        >
-          <Activity className="text-accent animate-pulse" style={{ width: 24, height: 24 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-            <div
-              style={{
-                fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                fontWeight: 800,
-                fontSize: 'clamp(14px, 2vw, 22px)',
-                color: '#e2e8f0',
-              }}
-            >
-              СМАРТ-СИТИ ҚАЗАҚСТАН
-            </div>
-            <div
-              style={{
-                fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                fontSize: 'clamp(9px, 1vw, 12px)',
-                color: '#94a3b8',
-                letterSpacing: 1,
-                textTransform: 'uppercase',
-              }}
-            >
-              Система мониторинга регионов // Уровень: {activeLayer.toUpperCase()}
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.nav
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="pointer-events-auto"
-          style={{ display: 'flex', gap: 4 }}
-        >
-          {tabs.map((tab) => {
-            const isActive = activeLayer === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveLayer(tab.id as ActiveLayer)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 12px',
-                  fontSize: 'clamp(11px, 1.2vw, 14px)',
-                  borderRadius: 8,
-                  background: isActive ? '#3b82f6' : 'transparent',
-                  color: isActive ? '#ffffff' : '#64748b',
-                  border: '1px solid transparent',
-                  cursor: 'pointer',
-                  fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                  transition: 'background 150ms ease, color 150ms ease',
-                }}
-              >
-                {tab.icon}
-                <span className="tab-label">{tab.label}</span>
-              </button>
-            );
-          })}
-        </motion.nav>
-      </header>
+      <div className="absolute inset-0 scanline z-50 mix-blend-overlay pointer-events-none"></div>
 
       {/* Legend */}
       <motion.div
@@ -134,7 +47,7 @@ function App() {
       </motion.div>
 
       {/* Main Map */}
-      <main className="w-full h-full flex items-center justify-center pt-16">
+      <main className="w-full h-full flex items-center justify-center">
         <KazakhstanMap
           selectedRegion={selectedRegionId}
           onRegionSelect={setSelectedRegionId}
@@ -175,6 +88,7 @@ function App() {
           </div>
         )}
       </motion.div>
+      </div>
     </div>
   );
 }
