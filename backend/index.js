@@ -104,11 +104,9 @@ function parseWaqiAqi(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Enrich RegionData-like object with live WAQI / TomTom / weather; keep mock values if APIs yield nothing usable */
+/** Enrich RegionData-like object with live WAQI / TomTom / weather; без live — нули, без моков */
 async function enrichRegionForChat(regionData) {
   const r = JSON.parse(JSON.stringify(regionData));
-  const mockTransport = regionData.transport ? JSON.parse(JSON.stringify(regionData.transport)) : null;
-  const mockEcology = regionData.ecology ? JSON.parse(JSON.stringify(regionData.ecology)) : null;
   let weatherNote = '';
   let transportLive = false;
   let ecologyLive = false;
@@ -142,8 +140,9 @@ async function enrichRegionForChat(regionData) {
     }
 
     if (process.env.TOMTOM_API_KEY) {
+      const ttKey = process.env.TOMTOM_API_KEY;
       try {
-        const tomtomUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${process.env.TOMTOM_API_KEY}`;
+        const tomtomUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${ttKey}`;
         const { ok, data } = await safeGet(tomtomUrl);
         const fs = data?.flowSegmentData;
         const currentSpeed = fs?.currentSpeed;
@@ -162,6 +161,16 @@ async function enrichRegionForChat(regionData) {
           r.transport.congestion = congestionIndex;
           r.transport.status =
             congestionIndex > 40 ? 'high' : congestionIndex > 20 ? 'medium' : 'low';
+          transportLive = true;
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        const { ok, count } = await fetchTomTomAccidentCount(coords.lat, coords.lon, ttKey);
+        if (ok && count !== null) {
+          r.transport = r.transport || {};
+          r.transport.accidents = count;
           transportLive = true;
         }
       } catch {
@@ -193,11 +202,11 @@ async function enrichRegionForChat(regionData) {
     }
   }
 
-  if (!transportLive && mockTransport) {
-    r.transport = mockTransport;
+  if (!transportLive) {
+    r.transport = { ...(r.transport || {}), congestion: 0, accidents: 0, status: 'low' };
   }
-  if (!ecologyLive && mockEcology) {
-    r.ecology = mockEcology;
+  if (!ecologyLive) {
+    r.ecology = { ...(r.ecology || {}), aqi: 0, co2: 0, status: 'low' };
   }
 
   return { region: r, weatherNote };
@@ -209,30 +218,39 @@ async function safeGet(url, timeoutMs = 6000) {
   return { ok: status >= 200 && status < 300, data };
 }
 
-// Deterministic pseudo-random fallback per region
-function seededRand(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
+/** EPSG:4326 bbox around a point; delta ~0.35° ≈ 25–40 km (TomTom max 10 000 km²). */
+function tomTomBboxAround(lat, lon, deltaDeg = 0.35) {
+  const minLat = lat - deltaDeg;
+  const maxLat = lat + deltaDeg;
+  const minLon = lon - deltaDeg;
+  const maxLon = lon + deltaDeg;
+  return `${minLon},${minLat},${maxLon},${maxLat}`;
 }
 
-function generateFallback(regionId) {
-  const idx = parseInt(regionId.replace('KZ-', ''), 10);
-  const rand = seededRand(idx * 7919);
-  return {
-    ecology: {
-      aqi: Math.round(20 + rand() * 130),
-      co2: Math.round(rand() * 12 * 10) / 10
-    },
-    transport: {
-      congestion: Math.round(5 + rand() * 60)
-    },
-    weather: {
-      temp: Math.round(-5 + rand() * 30)
-    }
-  };
+function tomTomIncidentFeatures(data) {
+  const inc = data?.incidents;
+  if (!inc) return [];
+  if (Array.isArray(inc)) return inc;
+  if (Array.isArray(inc.features)) return inc.features;
+  return [];
+}
+
+/**
+ * TomTom Traffic Incidents v5 — только категория Accident (ДТП).
+ * Параметр t опущен: сервер подставляет актуальный Traffic Model ID.
+ */
+async function fetchTomTomAccidentCount(lat, lon, apiKey) {
+  const bbox = tomTomBboxAround(lat, lon);
+  const fields = encodeURIComponent(
+    '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
+  );
+  const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${encodeURIComponent(
+    apiKey,
+  )}&bbox=${bbox}&fields=${fields}&language=ru-RU&timeValidityFilter=present&categoryFilter=Accident`;
+  const { ok, data } = await safeGet(url);
+  if (!ok || !data) return { ok: false, count: null };
+  // categoryFilter=Accident — все объекты в ответе относятся к ДТП
+  return { ok: true, count: tomTomIncidentFeatures(data).length };
 }
 
 app.get('/api/real-data', async (req, res) => {
@@ -243,6 +261,7 @@ app.get('/api/real-data', async (req, res) => {
       let aqi = null;
       let co2 = null;
       let congestion = null;
+      let accidents = null;
       let temp = null;
 
       // 1. Fetch Ecology Data (WAQI)
@@ -252,25 +271,38 @@ app.get('/api/real-data', async (req, res) => {
             `https://api.waqi.info/feed/${coords.waqi_slug}/?token=${process.env.WAQI_API_KEY}`
           );
           if (ok && data.status === "ok" && data.data) {
-            aqi = data.data.aqi;
-            co2 = data.data.iaqi?.co?.v || 0;
+            aqi = parseWaqiAqi(data.data.aqi);
+            const coRaw = data.data.iaqi?.co?.v;
+            co2 =
+              typeof coRaw === "number" && Number.isFinite(coRaw)
+                ? coRaw
+                : 0;
           }
         } catch (err) {
           // Will use fallback
         }
       }
 
-      // 2. Fetch Transport Data (TomTom)
+      // 2. Fetch Transport Data (TomTom): flow + ДТП (incidents)
       if (process.env.TOMTOM_API_KEY) {
+        const ttKey = process.env.TOMTOM_API_KEY;
         try {
-          const tomtomUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${process.env.TOMTOM_API_KEY}`;
-          const { ok, data } = await safeGet(tomtomUrl);
+          const [flowRes, incRes] = await Promise.all([
+            safeGet(
+              `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${ttKey}`,
+            ),
+            fetchTomTomAccidentCount(coords.lat, coords.lon, ttKey),
+          ]);
+          const { ok, data } = flowRes;
           if (ok && data?.flowSegmentData) {
             const currentSpeed = data.flowSegmentData.currentSpeed;
             const freeFlowSpeed = data.flowSegmentData.freeFlowSpeed;
             if (freeFlowSpeed > 0) {
               congestion = Math.max(0, Math.round((1 - (currentSpeed / freeFlowSpeed)) * 100));
             }
+          }
+          if (incRes.ok && incRes.count !== null) {
+            accidents = incRes.count;
           }
         } catch (err) {
           // Will use fallback
@@ -289,20 +321,19 @@ app.get('/api/real-data', async (req, res) => {
         // Will use fallback
       }
 
-      // If all APIs failed, use deterministic fallback so dashboard always has data
-      const fallback = generateFallback(regionId);
-
+      // Только живые/честные значения: при ошибке API — 0 (или null для температуры)
       results[regionId] = {
         ecology: {
-          aqi: aqi ?? fallback.ecology.aqi,
-          co2: co2 ?? fallback.ecology.co2
+          aqi: aqi ?? 0,
+          co2: co2 ?? 0,
         },
         transport: {
-          congestion: congestion ?? fallback.transport.congestion
+          congestion: congestion ?? 0,
+          accidents: accidents ?? 0,
         },
         weather: {
-          temp: temp ?? fallback.weather.temp
-        }
+          temp: temp ?? null,
+        },
       };
     });
 
@@ -364,9 +395,14 @@ Current Weather Conditions:
     // --- INTEGRATION OF REAL DATA PER CATEGORY ---
     if (category === 'transport' && regionMeta[regionData.id] && process.env.TOMTOM_API_KEY) {
       const coords = regionMeta[regionData.id];
+      const ttKey = process.env.TOMTOM_API_KEY;
       try {
-        const tomtomUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${process.env.TOMTOM_API_KEY}`;
-        const { ok, data } = await safeGet(tomtomUrl);
+        const [{ ok, data }, incRes] = await Promise.all([
+          safeGet(
+            `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${ttKey}`,
+          ),
+          fetchTomTomAccidentCount(coords.lat, coords.lon, ttKey),
+        ]);
         if (ok && data?.flowSegmentData) {
           const currentSpeed = data.flowSegmentData.currentSpeed;
           const freeFlowSpeed = data.flowSegmentData.freeFlowSpeed;
@@ -389,6 +425,25 @@ Current Weather Conditions:
             categoryData.status = congestionIndex > 40 ? 'critical' : (congestionIndex > 20 ? 'warning' : 'normal');
           }
         }
+        if (incRes.ok && incRes.count !== null) {
+          categoryData.accidents = incRes.count;
+          if (categoryData.metrics) {
+            const ac = incRes.count;
+            const acStatus = ac >= 5 ? 'critical' : ac >= 2 ? 'warning' : 'normal';
+            categoryData.metrics = categoryData.metrics.map((m) => {
+              const low = m.name.toLowerCase();
+              if (
+                low.includes('дтп') ||
+                low.includes('accident') ||
+                low.includes('авар') ||
+                m.name.includes('ДТП')
+              ) {
+                return { ...m, value: ac, status: acStatus };
+              }
+              return m;
+            });
+          }
+        }
       } catch (err) {
         // Falling back to existing data
       }
@@ -401,23 +456,24 @@ Current Weather Conditions:
           `https://api.waqi.info/feed/${waqiSlug}/?token=${process.env.WAQI_API_KEY}`
         );
         if (ok && data.status === "ok" && data.data) {
-          const realAqi = data.data.aqi;
+          const realAqi = parseWaqiAqi(data.data.aqi);
           const iaqi = data.data.iaqi || {};
           const realPm25 = iaqi.pm25 ? iaqi.pm25.v : null;
           const realCo = iaqi.co ? iaqi.co.v : null;
 
-          if (categoryData.metrics) {
-            categoryData.metrics = categoryData.metrics.map(m => {
-              const mName = m.name.toLowerCase();
-              if (mName.includes('aqi')) return { ...m, value: realAqi, status: getAqiStatus(realAqi) };
-              if (mName.includes('pm2.5') && realPm25 !== null) return { ...m, value: realPm25, status: realPm25 > 25 ? 'warning' : 'normal' };
-              if ((mName.includes('co2') || mName.includes('co')) && realCo !== null) return { ...m, name: 'Угарный газ (CO)', value: realCo, unit: 'μg/m³', status: realCo > 10 ? 'warning' : 'normal' };
-              return m;
-            });
+          if (realAqi != null) {
+            if (categoryData.metrics) {
+              categoryData.metrics = categoryData.metrics.map(m => {
+                const mName = m.name.toLowerCase();
+                if (mName.includes('aqi')) return { ...m, value: realAqi, status: getAqiStatus(realAqi) };
+                if (mName.includes('pm2.5') && realPm25 !== null) return { ...m, value: realPm25, status: realPm25 > 25 ? 'warning' : 'normal' };
+                if ((mName.includes('co2') || mName.includes('co')) && realCo !== null) return { ...m, name: 'Угарный газ (CO)', value: realCo, unit: 'μg/m³', status: realCo > 10 ? 'warning' : 'normal' };
+                return m;
+              });
+            }
+            categoryData.score = Math.max(0, 100 - Math.round(realAqi / 2));
+            categoryData.status = getAqiStatus(realAqi);
           }
-          const newScore = Math.max(0, 100 - Math.round(realAqi / 2));
-          categoryData.score = newScore;
-          categoryData.status = getAqiStatus(realAqi);
         }
       } catch (err) {
         // Falling back to existing data
@@ -427,7 +483,9 @@ Current Weather Conditions:
     // Build the user prompt context
     const metricsText = categoryData.metrics
       ? categoryData.metrics.map(m => `- ${m.name}: ${m.value} ${m.unit || ''} (Status: ${m.status})`).join('\n')
-      : `- AQI: ${categoryData.aqi || 'N/A'}\n- CO2/CO: ${categoryData.co2 || 'N/A'}\n- Congestion: ${categoryData.congestion || 'N/A'}%`;
+      : category === 'transport'
+        ? `- Загруженность (индекс пробок): ${categoryData.congestion ?? 'N/A'}%\n- ДТП в зоне TomTom (≈окрестности центра региона): ${categoryData.accidents ?? 'N/A'}`
+        : `- AQI: ${categoryData.aqi || 'N/A'}\n- CO2/CO: ${categoryData.co2 || 'N/A'}\n- Congestion: ${categoryData.congestion || 'N/A'}%`;
 
     const userPrompt = `
 Region Name: ${regionData.name || regionData.nameKz || 'Unknown'}
