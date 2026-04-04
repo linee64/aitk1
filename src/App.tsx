@@ -16,9 +16,9 @@ function App() {
     >
       <Header activeLayer={activeLayer} onLayerChange={setActiveLayer} />
 
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex flex-col flex-1 min-h-0">
       {/* Scanline Overlay */}
-      <div className="absolute inset-0 scanline z-50 mix-blend-overlay pointer-events-none"></div>
+      <div className="absolute inset-0 scanline z-50 mix-blend-overlay pointer-events-none w-full h-full"></div>
 
       {/* Legend */}
       <motion.div
