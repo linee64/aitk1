@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { API_BASE } from '../config';
 
 export type AnomalyItem = {
   metric: string;
@@ -29,7 +30,7 @@ export function useAnomalyDetection(regionId: string | null, metrics: Record<str
       return;
     }
     setLoading(true);
-    fetch('/api/anomalies', {
+    fetch(`${API_BASE}/api/anomalies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ regionId, metrics }),

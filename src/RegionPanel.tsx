@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
 import type { ActiveLayer, RegionData, RegionTrendPoint, StatusType } from './types';
+import { API_BASE } from './config';
 import { useAnomalyDetection } from './hooks/useAnomalyDetection';
 import type { AppTheme } from './theme';
 
@@ -226,7 +227,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
     setAiLoading(true);
     setAiAnalysis(null);
     try {
-      const res = await fetch('/api/analyze', {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -256,7 +257,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
     setChatInput('');
     setChatLoading(true);
     try {
-      const r = await fetch('/api/chat', {
+      const r = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
