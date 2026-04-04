@@ -149,19 +149,24 @@ export function Header({ activeLayer, onLayerChange }: HeaderProps) {
         @media (max-width: 768px) {
           .header-subtitle-line { display: none !important; }
           .header-tab-label { display: none !important; }
-          .header-tab-btn { padding: 8px !important; }
+          .header-tab-btn { padding: 8px !important; min-width: 44px; min-height: 44px; }
+          .header-icon-btn { min-width: 44px !important; min-height: 44px !important; }
         }
       `}</style>
 
       <header
+        className="app-header-safe"
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 1000,
-          height: 64,
+          minHeight: 64,
           background: 'var(--header-bg)',
           borderBottom: '1px solid var(--header-border-bottom)',
-          padding: '0 28px',
+          paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
+          paddingLeft: 'max(12px, calc(16px + env(safe-area-inset-left, 0px)))',
+          paddingRight: 'max(12px, calc(16px + env(safe-area-inset-right, 0px)))',
+          paddingBottom: 0,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -182,6 +187,7 @@ export function Header({ activeLayer, onLayerChange }: HeaderProps) {
             type="button"
             onClick={goBack}
             aria-label="Назад"
+            className="header-icon-btn"
             style={{
               ...iconBtnBase,
               fontSize: 18,
@@ -304,7 +310,7 @@ export function Header({ activeLayer, onLayerChange }: HeaderProps) {
                 type="button"
                 onClick={toggleTheme}
                 aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-                className="header-theme-toggle"
+                className="header-theme-toggle header-icon-btn"
                 style={{
                   ...iconBtnBase,
                   padding: 0,
@@ -373,7 +379,7 @@ export function Header({ activeLayer, onLayerChange }: HeaderProps) {
                 type="button"
                 onClick={toggleTheme}
                 aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-                className="header-theme-toggle"
+                className="header-theme-toggle header-icon-btn"
                 style={{
                   ...iconBtnBase,
                   padding: 0,
@@ -390,6 +396,7 @@ export function Header({ activeLayer, onLayerChange }: HeaderProps) {
                 type="button"
                 aria-expanded={burgerOpen}
                 aria-label="Меню"
+                className="header-icon-btn"
                 onClick={(e) => {
                   e.stopPropagation();
                   setBurgerOpen((o) => !o);

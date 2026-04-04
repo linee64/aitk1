@@ -176,6 +176,8 @@ type ChatMessage = { role: 'user' | 'assistant'; content: string };
 interface RegionPanelProps {
   theme: AppTheme;
   open: boolean;
+  /** Full-width overlay + backdrop (narrow / iPhone web app) */
+  compactLayout?: boolean;
   region: RegionData | null;
   regionDisplayName: string;
   activeLayer: ActiveLayer;
@@ -186,6 +188,7 @@ interface RegionPanelProps {
 export const RegionPanel: React.FC<RegionPanelProps> = ({
   theme,
   open,
+  compactLayout = false,
   region,
   regionDisplayName,
   activeLayer,
@@ -350,10 +353,41 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   const fontMono =
     'IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
-  return (
-    <aside
-      className="region-panel"
-      style={{
+  const safeTop = 'env(safe-area-inset-top, 0px)';
+  const safeBottom = 'env(safe-area-inset-bottom, 0px)';
+  const safeLeft = 'env(safe-area-inset-left, 0px)';
+  const safeRight = 'env(safe-area-inset-right, 0px)';
+
+  const panelAsideStyle: React.CSSProperties = compactLayout
+    ? {
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: '100%',
+        maxWidth: '100%',
+        height: '100%',
+        maxHeight: '100dvh',
+        background: pt.panelBg,
+        borderLeft: 'none',
+        boxShadow: theme === 'dark' ? '0 -8px 40px rgba(0,0,0,0.5)' : '0 -8px 32px rgba(0,0,0,0.12)',
+        borderTop: `2px solid ${overallAccent}`,
+        transform: open ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 300ms ease',
+        zIndex: 1100,
+        pointerEvents: open ? 'auto' : 'none',
+        padding: 16,
+        paddingTop: `calc(52px + ${safeTop})`,
+        paddingBottom: `calc(16px + ${safeBottom})`,
+        paddingLeft: `calc(16px + ${safeLeft})`,
+        paddingRight: `calc(16px + ${safeRight})`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflowY: 'auto',
+      }
+    : {
         position: 'absolute',
         right: 0,
         top: 0,
@@ -373,9 +407,32 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         flexDirection: 'column',
         gap: 16,
         overflowY: 'auto',
-      }}
-      aria-hidden={!open}
-    >
+      };
+
+  return (
+    <>
+      {compactLayout && (
+        <div
+          role="presentation"
+          aria-hidden={!open}
+          onClick={open ? onClose : undefined}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1090,
+            background: 'rgba(0,0,0,0.4)',
+            opacity: open ? 1 : 0,
+            visibility: open ? 'visible' : 'hidden',
+            transition: 'opacity 220ms ease, visibility 220ms ease',
+            pointerEvents: open ? 'auto' : 'none',
+          }}
+        />
+      )}
+      <aside
+        className="region-panel"
+        style={panelAsideStyle}
+        aria-hidden={!open}
+      >
       <style>{`
         .region-panel::-webkit-scrollbar { width: 4px; }
         .region-panel::-webkit-scrollbar-track { background: transparent; }
@@ -397,8 +454,8 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         aria-label="Закрыть панель"
         style={{
           position: 'absolute',
-          top: 14,
-          right: 14,
+          top: compactLayout ? `calc(8px + ${safeTop})` : 14,
+          right: compactLayout ? `calc(12px + ${safeRight})` : 14,
           zIndex: 30,
           width: 44,
           height: 44,
@@ -1082,6 +1139,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         </div>
       </div>
     </aside>
+    </>
   );
 };
 

@@ -10,6 +10,7 @@ import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { mockRegionData } from './mockRegionData';
 import type { ActiveLayer } from './types';
+import { useCompactLayout } from './hooks/useCompactLayout';
 import { RegionPanel } from './RegionPanel';
 import type { AppTheme } from './theme';
 
@@ -324,9 +325,22 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   }, [getRegionStyle]);
 
   const isPanelOpen = !!selectedRegionSafe;
+  const compactLayout = useCompactLayout(768);
+  const mapShellWidth = isPanelOpen && !compactLayout ? 'calc(100% - 380px)' : '100%';
 
   return (
-    <div className="map-region" style={{ position: 'relative', width: '100%', height: 600 }}>
+    <div
+      className="map-region"
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        minHeight: 0,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <style>{`
         .leaflet-control-attribution {
           background: var(--legend-bg) !important;
@@ -339,9 +353,11 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
 
       <div
         style={{
-          width: isPanelOpen ? 'calc(100% - 380px)' : '100%',
-          height: 600,
-          borderRadius: 12,
+          width: mapShellWidth,
+          flex: 1,
+          minHeight: compactLayout ? 220 : 0,
+          height: '100%',
+          borderRadius: compactLayout ? 8 : 12,
           overflow: 'hidden',
           transition: 'width 300ms ease',
           position: 'relative',
@@ -389,7 +405,7 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
           zoomSnap={0.1}
           zoomDelta={1}
           wheelPxPerZoomLevel={40}
-          style={{ width: '100%', height: '600px' }}
+          style={{ width: '100%', height: '100%', minHeight: 260 }}
         >
           <PositronTileLayer onLoadingChange={setTilesLoading} />
           <MapContent
@@ -410,6 +426,7 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
       <RegionPanel
         theme={theme}
         open={isPanelOpen}
+        compactLayout={compactLayout}
         region={selectedRegionData}
         regionDisplayName={selectedRegionData?.name ?? selectedRegionSafe ?? ''}
         activeLayer={activeLayer}

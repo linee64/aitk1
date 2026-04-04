@@ -12,7 +12,7 @@ function App() {
 
   return (
     <div
-      className={`app-container theme-${theme} relative flex flex-col w-screen h-screen bg-background text-text-primary overflow-hidden font-sans`}
+      className={`app-container theme-${theme} relative flex flex-col w-full max-w-[100vw] h-[100dvh] min-h-0 bg-background text-text-primary overflow-hidden font-sans`}
     >
       <Header activeLayer={activeLayer} onLayerChange={setActiveLayer} />
 
@@ -25,7 +25,7 @@ function App() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 0.2 }}
-        className="absolute bottom-8 left-8 z-40 backdrop-blur-md border border-border p-4 rounded-xl font-mono text-xs pointer-events-none"
+        className="app-legend-mobile absolute bottom-8 left-8 z-40 backdrop-blur-md border border-border p-4 rounded-xl font-mono text-xs pointer-events-none"
         style={{ background: 'var(--legend-bg)' }}
       >
         <h4 className="text-text-muted mb-3 uppercase tracking-wider">Статус системы</h4>
@@ -46,7 +46,7 @@ function App() {
       </motion.div>
 
       {/* Main Map */}
-      <main className="w-full h-full flex items-center justify-center">
+      <main className="w-full flex-1 min-h-0 flex flex-col">
         <KazakhstanMap
           theme={theme}
           selectedRegion={selectedRegionId}
