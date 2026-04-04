@@ -60,6 +60,149 @@ function getAqiStatus(aqi) {
   return 'critical';
 }
 
+function aqiStatusToLayerStatus(aqi) {
+  const s = getAqiStatus(aqi);
+  if (s === 'critical') return 'high';
+  if (s === 'warning') return 'medium';
+  return 'low';
+}
+
+const CHAT_SYSTEM_PROMPT_BASE = `Ты — ИИ-ассистент дашборда регионов Казахстана. В контексте только два направления данных: экология и транспорт. ЖКХ, жильё, коммунальные услуги, безопасность и любые другие темы вне экологии/транспорта не обсуждаются: на такие вопросы ответь одной короткой фразой, что в этом чате доступны только экология и транспорт.
+
+Источник фактов — только переданный JSON (регион, тренды экологии/транспорта, погода при наличии). Не придумывай цифры и события.
+
+Формат ответа — только простой текст для экрана чата:
+- Запрещены любые символы и приёмы разметки: звёздочки, решётки, подчёркивания для выделения, обратные кавычки, Markdown, HTML.
+- Не используй жирный или курсив (никаких ** * __ _ вокруг текста).
+- Не делай нумерованные списки вида «1.» «2.» «3.»; не начинай строки с «*» для пунктов.
+- Структурируй смысл обычными фразами: короткие абзацы через пустую строку; при необходимости строка-подпись и двоеточие (Сводка: … Экология: …) без спецсимволов оформления.
+- Без вступлений вроде «Конечно», без фраз «если нужно — спросите».`;
+
+function plainChatReply(raw) {
+  if (typeof raw !== 'string') return '';
+  let t = raw.replace(/\r\n/g, '\n');
+  for (let n = 0; n < 8; n++) {
+    const next = t
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1');
+    if (next === t) break;
+    t = next;
+  }
+  t = t.replace(/`([^`]+)`/g, '$1');
+  t = t.replace(/^#{1,6}\s+/gm, '');
+  t = t.replace(/^\s*\*\s+/gm, '');
+  t = t.replace(/\*([^*\n]+)\*/g, '$1');
+  t = t.replace(/_([^_\n]+)_/g, '$1');
+  t = t.replace(/^\s*\d+\.\s+/gm, '');
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+
+function parseWaqiAqi(raw) {
+  if (raw == null || raw === '-') return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Enrich RegionData-like object with live WAQI / TomTom / weather; keep mock values if APIs yield nothing usable */
+async function enrichRegionForChat(regionData) {
+  const r = JSON.parse(JSON.stringify(regionData));
+  const mockTransport = regionData.transport ? JSON.parse(JSON.stringify(regionData.transport)) : null;
+  const mockEcology = regionData.ecology ? JSON.parse(JSON.stringify(regionData.ecology)) : null;
+  let weatherNote = '';
+  let transportLive = false;
+  let ecologyLive = false;
+
+  if (regionMeta[r.id]) {
+    const coords = regionMeta[r.id];
+    try {
+      const { ok, data } = await safeGet(
+        `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,wind_speed_10m,precipitation,weather_code`,
+      );
+      if (ok && data?.current) {
+        const temp = data.current.temperature_2m;
+        const wind = data.current.wind_speed_10m;
+        const precip = data.current.precipitation;
+        const code = data.current.weather_code;
+        if (
+          Number.isFinite(temp) &&
+          Number.isFinite(wind) &&
+          Number.isFinite(precip) &&
+          Number.isFinite(code)
+        ) {
+          let weatherDesc = 'Ясно/облачно';
+          if (code >= 51 && code <= 67) weatherDesc = 'Дождь';
+          else if (code >= 71 && code <= 86) weatherDesc = 'Снег';
+          else if (code >= 95) weatherDesc = 'Гроза';
+          weatherNote = `Погода (Open-Meteo): ${temp}°C, ветер ${wind} км/ч, осадки ${precip} мм, условие: ${weatherDesc} (код WMO ${code}).`;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (process.env.TOMTOM_API_KEY) {
+      try {
+        const tomtomUrl = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lon}&key=${process.env.TOMTOM_API_KEY}`;
+        const { ok, data } = await safeGet(tomtomUrl);
+        const fs = data?.flowSegmentData;
+        const currentSpeed = fs?.currentSpeed;
+        const freeFlowSpeed = fs?.freeFlowSpeed;
+        if (
+          ok &&
+          fs &&
+          typeof currentSpeed === 'number' &&
+          Number.isFinite(currentSpeed) &&
+          typeof freeFlowSpeed === 'number' &&
+          Number.isFinite(freeFlowSpeed) &&
+          freeFlowSpeed > 0
+        ) {
+          const congestionIndex = Math.max(0, Math.min(100, Math.round((1 - currentSpeed / freeFlowSpeed) * 100)));
+          r.transport = r.transport || {};
+          r.transport.congestion = congestionIndex;
+          r.transport.status =
+            congestionIndex > 40 ? 'high' : congestionIndex > 20 ? 'medium' : 'low';
+          transportLive = true;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (process.env.WAQI_API_KEY) {
+      const waqiSlug = regionMeta[r.id].waqi_slug;
+      try {
+        const { ok, data } = await safeGet(`https://api.waqi.info/feed/${waqiSlug}/?token=${process.env.WAQI_API_KEY}`);
+        if (ok && data?.status === 'ok' && data.data) {
+          const realAqi = parseWaqiAqi(data.data.aqi);
+          if (realAqi != null) {
+            const iaqi = data.data.iaqi || {};
+            r.ecology = r.ecology || {};
+            r.ecology.aqi = realAqi;
+            r.ecology.status = aqiStatusToLayerStatus(realAqi);
+            const coVal = iaqi.co?.v;
+            if (typeof coVal === 'number' && Number.isFinite(coVal)) {
+              r.ecology.co2 = coVal;
+            }
+            ecologyLive = true;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (!transportLive && mockTransport) {
+    r.transport = mockTransport;
+  }
+  if (!ecologyLive && mockEcology) {
+    r.ecology = mockEcology;
+  }
+
+  return { region: r, weatherNote };
+}
+
 // Helper: safe axios GET with timeout
 async function safeGet(url, timeoutMs = 6000) {
   const { data, status } = await axios.get(url, { timeout: timeoutMs });
@@ -335,6 +478,87 @@ ${additionalWeatherContext}
     return res.status(500).json({
       error: 'Failed to generate analysis',
       details: error.message
+    });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { messages, regionData } = req.body;
+
+    if (!regionData || typeof regionData !== 'object') {
+      return res.status(400).json({ error: 'Missing regionData in request body.' });
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages must be a non-empty array.' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+
+    const { region: enrichedRegion, weatherNote } = await enrichRegionForChat(regionData);
+
+    const tr = enrichedRegion.trends || null;
+    const trendsEcologyTransport =
+      tr && (tr.ecology || tr.transport)
+        ? {
+            ...(tr.ecology ? { ecology: tr.ecology } : {}),
+            ...(tr.transport ? { transport: tr.transport } : {}),
+          }
+        : null;
+
+    const regionForPrompt = {
+      id: enrichedRegion.id,
+      name: enrichedRegion.name,
+      nameKz: enrichedRegion.nameKz,
+      ecology: enrichedRegion.ecology ?? null,
+      transport: enrichedRegion.transport ?? null,
+    };
+
+    const contextPayload = {
+      project: {
+        name: 'Smart City Kazakhstan',
+        scope: 'Только направления: экология (AQI, CO₂ и статус) и транспорт (пробки, ДТП, статус). Прочие слои карты в этом чате не используются.',
+      },
+      region: regionForPrompt,
+      trends: trendsEcologyTransport,
+      liveContext: weatherNote ? { weather: weatherNote } : {},
+    };
+
+    const systemText = `${CHAT_SYSTEM_PROMPT_BASE}
+
+КОНТЕКСТ (JSON):
+${JSON.stringify(contextPayload, null, 2)}`;
+
+    const geminiContents = messages.map((m) => {
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      const text = typeof m.content === 'string' ? m.content : '';
+      return { role, parts: [{ text }] };
+    });
+
+    const geminiResponse = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        system_instruction: { parts: [{ text: systemText }] },
+        contents: geminiContents,
+        generationConfig: { temperature: 0.25, maxOutputTokens: 768 },
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 60000 },
+    );
+
+    const textResponse = geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!textResponse) {
+      throw new Error('Invalid response format from Gemini API');
+    }
+
+    return res.json({ reply: plainChatReply(textResponse) });
+  } catch (error) {
+    console.error('Error in /api/chat:', error.message);
+    return res.status(500).json({
+      error: 'Failed to get chat reply',
+      details: error.response?.data?.error?.message || error.message,
     });
   }
 });

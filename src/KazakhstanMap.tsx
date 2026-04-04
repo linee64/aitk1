@@ -18,7 +18,6 @@ interface KazakhstanMapProps {
   selectedRegion: string | null;
   onRegionSelect: (regionId: string) => void;
   activeLayer: 'ecology' | 'transport' | 'safety' | 'housing';
-  onAIRequest?: (regionName: string, activeLayer: ActiveLayer) => void;
   onActiveLayerChange?: (layer: ActiveLayer) => void;
 }
 
@@ -224,7 +223,6 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   selectedRegion,
   onRegionSelect,
   activeLayer,
-  onAIRequest,
   onActiveLayerChange: _onActiveLayerChange,
 }) => {
   const regionLineWeight = theme === 'light' ? 2.5 : 2;
@@ -412,7 +410,6 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
         regionDisplayName={selectedRegionData?.name ?? selectedRegionSafe ?? ''}
         activeLayer={activeLayer}
         onClose={() => onRegionSelect('')}
-        onAIRequest={onAIRequest}
       />
     </div>
   );

@@ -31,5 +31,6 @@ Thumbs.db
 # Environment / Secret keys
 .env
 .env.*
+backend/.env
 !.env.example
 *.local

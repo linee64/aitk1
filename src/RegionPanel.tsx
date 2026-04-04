@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
 import type { ActiveLayer, RegionData, StatusType } from './types';
 import type { AppTheme } from './theme';
@@ -165,6 +165,8 @@ const statusTag = (status: StatusType) => {
 
 type TrendPoint = { month: string; value: number };
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
 interface RegionPanelProps {
   theme: AppTheme;
   open: boolean;
@@ -172,7 +174,6 @@ interface RegionPanelProps {
   regionDisplayName: string;
   activeLayer: ActiveLayer;
   onClose: () => void;
-  onAIRequest?: (regionName: string, activeLayer: ActiveLayer) => void;
 }
 
 export const RegionPanel: React.FC<RegionPanelProps> = ({
@@ -182,7 +183,6 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   regionDisplayName,
   activeLayer,
   onClose,
-  onAIRequest,
 }) => {
   const pt = panelPalette(theme);
   const overallStatus = region ? region.overallStatus : ('low' as StatusType);
@@ -190,6 +190,54 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   const overallAccent = statusColor(overallStatus);
   const statusInline = statusPill(layerStatus);
   const [trendHoverIndex, setTrendHoverIndex] = useState<number | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setChatMessages([]);
+    setChatInput('');
+    setChatError(null);
+  }, [region?.id]);
+
+  useEffect(() => {
+    if (open) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, chatLoading, open]);
+
+  const sendChat = async () => {
+    if (!region || chatLoading) return;
+    const trimmed = chatInput.trim();
+    if (!trimmed) return;
+    setChatError(null);
+    const nextMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: trimmed }];
+    setChatMessages(nextMessages);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: nextMessages,
+          regionData: region,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data.details || data.error || 'Не удалось получить ответ');
+      }
+      const reply = typeof data.reply === 'string' ? data.reply : '';
+      if (!reply) throw new Error('Пустой ответ модели');
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка сети';
+      setChatError(msg);
+    } finally {
+      setChatLoading(false);
+    }
+  };
 
   const kpis = useMemo(() => {
     if (!region) return [];
@@ -278,11 +326,6 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         .region-panel::-webkit-scrollbar { width: 4px; }
         .region-panel::-webkit-scrollbar-track { background: transparent; }
         .region-panel::-webkit-scrollbar-thumb { background: ${pt.scrollThumb}; border-radius: 999px; }
-
-        @keyframes pulseDot {
-          0%, 100% { transform: scale(1); opacity: 0.9; }
-          50% { transform: scale(1.25); opacity: 0.55; }
-        }
       `}</style>
 
       <button
@@ -546,78 +589,114 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
 
       <div
         style={{
-          background: `linear-gradient(135deg, ${pt.aiBoxFrom}, ${pt.aiBoxTo})`,
-          border: `1px solid ${pt.aiBoxBorder}`,
-          borderRadius: 12,
-          padding: 16,
+          ...sectionCard,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          padding: 12,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ fontFamily: fontMono, fontSize: 13, color: theme === 'light' ? '#4f46e5' : '#818cf8' }}>AI Анализ</div>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background: pt.aiDot,
-              animation: 'pulseDot 1.2s ease-in-out infinite',
-            }}
-          />
-        </div>
+        <div style={{ fontFamily: fontMono, fontSize: 11, color: pt.muted, letterSpacing: '0.06em' }}>ИИ чат</div>
 
-        <div style={{ marginTop: 10, fontSize: 12, color: pt.aiSub, lineHeight: 1.5 }}>
-          Получите анализ ситуации и рекомендации по трём ключевым вопросам
-        </div>
-
-        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {['Что происходит?', 'Насколько критично?', 'Что предпринять?'].map((q) => (
-            <div
-              key={q}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: pt.aiChipBg,
-                border: `1px solid ${pt.aiChipBorder}`,
-                color: pt.aiChipColor,
-                fontSize: 11,
-                fontFamily: fontMono,
-              }}
-            >
-              {q}
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onAIRequest?.(regionDisplayName, activeLayer)}
+        <div
           style={{
-            marginTop: 14,
-            width: '100%',
-            background: '#4f46e5',
-            border: '1px solid #4f46e5',
-            color: '#ffffff',
-            fontFamily: fontMono,
-            fontSize: 13,
+            minHeight: 160,
+            maxHeight: 200,
+            overflowY: 'auto',
             borderRadius: 8,
-            padding: 10,
-            cursor: onAIRequest ? 'pointer' : 'default',
-            transition: 'background 140ms ease, transform 140ms ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#6366f1';
-            e.currentTarget.style.transform = 'scale(1.01)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = '#4f46e5';
-            e.currentTarget.style.transform = 'scale(1)';
+            background: pt.sectionBg,
+            border: `1px solid ${pt.sectionBorder}`,
+            padding: 8,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
           }}
         >
-          Запустить AI анализ →
-        </button>
+          {chatMessages.map((m, i) => (
+            <div
+              key={i}
+              style={{
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '94%',
+                borderRadius: 8,
+                padding: '6px 8px',
+                fontSize: 11,
+                lineHeight: 1.45,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                fontFamily: m.role === 'user' ? fontMono : 'inherit',
+                background:
+                  m.role === 'user'
+                    ? theme === 'dark'
+                      ? 'rgba(79,70,229,0.35)'
+                      : 'rgba(79,70,229,0.15)'
+                    : theme === 'dark'
+                      ? 'rgba(30,41,59,0.9)'
+                      : '#ffffff',
+                border: `1px solid ${m.role === 'user' ? pt.aiChipBorder : pt.sectionBorder}`,
+                color: pt.aiHead,
+              }}
+            >
+              {m.content}
+            </div>
+          ))}
+          {chatLoading && (
+            <div style={{ fontSize: 10, color: pt.muted, fontFamily: fontMono }}>…</div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        {chatError && (
+          <div style={{ fontSize: 10, color: '#f87171', fontFamily: fontMono, lineHeight: 1.35 }}>{chatError}</div>
+        )}
+
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+          <textarea
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void sendChat();
+              }
+            }}
+            placeholder=""
+            aria-label="Сообщение"
+            rows={2}
+            disabled={!region || chatLoading}
+            style={{
+              flex: 1,
+              resize: 'none',
+              borderRadius: 8,
+              border: `1px solid ${pt.sectionBorder}`,
+              background: pt.sectionBg,
+              color: pt.aiHead,
+              padding: '6px 8px',
+              fontSize: 11,
+              fontFamily: fontMono,
+              outline: 'none',
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void sendChat()}
+            disabled={!region || chatLoading || !chatInput.trim()}
+            style={{
+              flexShrink: 0,
+              height: 40,
+              padding: '0 12px',
+              background: !region || chatLoading || !chatInput.trim() ? pt.barTrack : '#4f46e5',
+              border: `1px solid ${!region || chatLoading || !chatInput.trim() ? pt.sectionBorder : '#4f46e5'}`,
+              color: '#ffffff',
+              fontFamily: fontMono,
+              fontSize: 11,
+              borderRadius: 8,
+              cursor: !region || chatLoading || !chatInput.trim() ? 'not-allowed' : 'pointer',
+            }}
+          >
+            →
+          </button>
+        </div>
       </div>
     </aside>
   );
