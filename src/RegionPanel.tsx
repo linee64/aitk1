@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
 import type { ActiveLayer, RegionData, StatusType } from './types';
+import { useAnomalyDetection } from './hooks/useAnomalyDetection';
 import type { AppTheme } from './theme';
 
 type PanelPalette = {
@@ -26,12 +27,7 @@ type PanelPalette = {
   tooltipColor: string;
   tooltipLabel: string;
   tooltipCursor: string;
-  aiPlaceholderBg: string;
-  aiPlaceholderBorder: string;
-  aiPlaceholderSub: string;
-  aiPlaceholderHint: string;
   scrollThumb: string;
-  aiHead: string;
   aiSub: string;
   aiChipBg: string;
   aiChipBorder: string;
@@ -67,12 +63,7 @@ function panelPalette(theme: AppTheme): PanelPalette {
       tooltipColor: '#1a1a2e',
       tooltipLabel: '#64748b',
       tooltipCursor: 'rgba(37,99,235,0.12)',
-      aiPlaceholderBg: '#f8fafc',
-      aiPlaceholderBorder: '#e2e8f0',
-      aiPlaceholderSub: '#64748b',
-      aiPlaceholderHint: '#94a3b8',
       scrollThumb: '#cbd5e1',
-      aiHead: '#1a1a2e',
       aiSub: '#64748b',
       aiChipBg: '#eef2ff',
       aiChipBorder: '#818cf8',
@@ -106,12 +97,7 @@ function panelPalette(theme: AppTheme): PanelPalette {
     tooltipColor: '#e2e8f0',
     tooltipLabel: '#94a3b8',
     tooltipCursor: 'rgba(59,130,246,0.08)',
-    aiPlaceholderBg: '#111827',
-    aiPlaceholderBorder: '#1e293b',
-    aiPlaceholderSub: '#475569',
-    aiPlaceholderHint: '#334155',
     scrollThumb: '#1e293b',
-    aiHead: '#e2e8f0',
     aiSub: '#64748b',
     aiChipBg: '#1e1b4b',
     aiChipBorder: '#818cf8',
@@ -129,17 +115,6 @@ export function MaterialSymbolsClose(props: React.SVGProps<SVGSVGElement>) {
       <path
         fill="currentColor"
         d="M6.4 19L5 17.6l5.6-5.6L5 6.4L6.4 5l5.6 5.6L17.6 5L19 6.4L13.4 12l5.6 5.6l-1.4 1.4l-5.6-5.6z"
-      />
-    </svg>
-  );
-}
-
-export function MaterialSymbolsLightBarChart4Bars(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...props}>
-      <path
-        fill="currentColor"
-        d="M3 20v-1h18v1zm1-2.77V12h2v5.23zm4.654 0V7h2v10.23zm4.673 0V10h2v7.23zm4.673 0V4h2v13.23z"
       />
     </svg>
   );
@@ -163,6 +138,36 @@ const statusTag = (status: StatusType) => {
   return { text: 'LOW', color: '#22c55e' };
 };
 
+const metricLabelRu: Record<string, string> = {
+  aqi: 'AQI',
+  congestion: 'Пробки',
+  co2: 'CO₂',
+};
+
+const CATEGORY_LABELS: Record<ActiveLayer, string> = {
+  ecology: 'Экология',
+  transport: 'Транспорт',
+  safety: 'Безопасность',
+  housing: 'Жильё',
+};
+
+type AiForecast = {
+  summary: string;
+  trend: 'worsening' | 'stable' | 'improving';
+  predictedValues?: { aqi?: number | null; congestion?: number | null };
+  riskLevel: string;
+  timeframe: string;
+};
+
+export type AiAnalysisResult = {
+  situation?: string;
+  criticality?: string;
+  criticalityColor?: string;
+  explanation?: string;
+  recommendations?: string[];
+  forecast?: AiForecast;
+};
+
 type TrendPoint = { month: string; value: number };
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -174,6 +179,7 @@ interface RegionPanelProps {
   regionDisplayName: string;
   activeLayer: ActiveLayer;
   onClose: () => void;
+  onAIRequest?: (regionName: string, activeLayer: ActiveLayer) => void;
 }
 
 export const RegionPanel: React.FC<RegionPanelProps> = ({
@@ -183,6 +189,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   regionDisplayName,
   activeLayer,
   onClose,
+  onAIRequest,
 }) => {
   const pt = panelPalette(theme);
   const overallStatus = region ? region.overallStatus : ('low' as StatusType);
@@ -190,11 +197,18 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   const overallAccent = statusColor(overallStatus);
   const statusInline = statusPill(layerStatus);
   const [trendHoverIndex, setTrendHoverIndex] = useState<number | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<AiAnalysisResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setAiAnalysis(null);
+    setAiLoading(false);
+  }, [region?.id, activeLayer]);
 
   useEffect(() => {
     setChatMessages([]);
@@ -205,6 +219,32 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   useEffect(() => {
     if (open) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, chatLoading, open]);
+
+  const runAiAnalysis = useCallback(async () => {
+    if (!region) return;
+    onAIRequest?.(regionDisplayName, activeLayer);
+    setAiLoading(true);
+    setAiAnalysis(null);
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          regionData: region,
+          category: activeLayer,
+          categoryLabel: CATEGORY_LABELS[activeLayer],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Analyze failed');
+      setAiAnalysis(data.analysis as AiAnalysisResult);
+    } catch (e) {
+      console.error(e);
+      setAiAnalysis(null);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [region, activeLayer, regionDisplayName, onAIRequest]);
 
   const sendChat = async () => {
     if (!region || chatLoading) return;
@@ -264,6 +304,16 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
       { label: 'Failures', value: region.housing.failures, status: region.housing.status },
     ];
   }, [region, activeLayer]);
+
+  const anomalyMetrics = useMemo(
+    () => ({
+      aqi: region?.ecology?.aqi ?? 0,
+      congestion: region?.transport?.congestion ?? 0,
+      co2: region?.ecology?.co2 ?? 0,
+    }),
+    [region],
+  );
+  const { anomalyData, loading: anomalyLoading } = useAnomalyDetection(region?.id ?? null, anomalyMetrics);
 
   const trend: TrendPoint[] = ((region as any)?.trends?.[activeLayer] ?? []) as TrendPoint[];
   const avg = useMemo(() => {
@@ -326,6 +376,15 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         .region-panel::-webkit-scrollbar { width: 4px; }
         .region-panel::-webkit-scrollbar-track { background: transparent; }
         .region-panel::-webkit-scrollbar-thumb { background: ${pt.scrollThumb}; border-radius: 999px; }
+
+        @keyframes pulseDot {
+          0%, 100% { transform: scale(1); opacity: 0.9; }
+          50% { transform: scale(1.25); opacity: 0.55; }
+        }
+        @keyframes forecastSkeleton {
+          0%, 100% { opacity: 0.35; }
+          50% { opacity: 0.55; }
+        }
       `}</style>
 
       <button
@@ -547,44 +606,363 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
         </div>
       </div>
 
-      <div style={{ ...sectionCard, padding: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-          <div style={{ fontFamily: fontMono, fontSize: 12, color: pt.aiHead }}>AI Прогнозирование</div>
-          <div
-            style={{
-              fontFamily: fontMono,
-              fontSize: 10,
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: 'rgba(59,130,246,0.15)',
-              border: '1px solid #3b82f6',
-              color: '#93c5fd',
-            }}
-          >
-            СКОРО
-          </div>
-        </div>
+      <div
+        style={{
+          ...sectionCard,
+          padding: 12,
+          background:
+            anomalyData?.hasAnomalies && anomalyData.overallRisk === 'critical'
+              ? 'rgba(239,68,68,0.1)'
+              : anomalyData?.hasAnomalies
+                ? 'rgba(245,158,11,0.1)'
+                : 'rgba(34,197,94,0.1)',
+          border:
+            anomalyData?.hasAnomalies && anomalyData.overallRisk === 'critical'
+              ? '1px solid #ef4444'
+              : anomalyData?.hasAnomalies
+                ? '1px solid #f59e0b'
+                : '1px solid #22c55e',
+        }}
+      >
         <div
           style={{
-            height: 120,
-            background: pt.aiPlaceholderBg,
-            border: `1px dashed ${pt.aiPlaceholderBorder}`,
-            borderRadius: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            textAlign: 'center',
-            padding: 12,
+            fontSize: 12,
+            fontFamily: fontMono,
+            color: pt.muted,
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: 10,
           }}
         >
-          <div style={{ fontSize: 24, lineHeight: 1, color: '#3b82f6', display: 'inline-flex' }}>
-            <MaterialSymbolsLightBarChart4Bars />
-          </div>
-          <div style={{ fontSize: 12, color: pt.aiPlaceholderSub }}>Прогноз и аномалии появятся здесь</div>
-          <div style={{ fontSize: 11, color: pt.aiPlaceholderHint }}>Подключите AI-модуль в настройках</div>
+          Аномалии (изоляция от нормы)
         </div>
+        {anomalyLoading && (
+          <div style={{ fontSize: 12, fontFamily: fontMono, color: pt.muted }}>Анализ…</div>
+        )}
+        {!anomalyLoading && anomalyData?.hasAnomalies && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, fontFamily: fontMono, color: '#ef4444', fontWeight: 600 }}>
+              ⚠ Обнаружена аномалия
+            </div>
+            {anomalyData.anomalies.map((a) => {
+              const label = metricLabelRu[a.metric] ?? a.metric;
+              const barPct = Math.min(100, (a.deviation / 4) * 100);
+              const sev = a.severity === 'critical';
+              return (
+                <div key={a.metric} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontFamily: fontMono, color: pt.title }}>{label}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontFamily: fontMono,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        border: `1px solid ${sev ? '#ef4444' : '#f59e0b'}`,
+                        color: sev ? '#ef4444' : '#f59e0b',
+                        background: sev ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                      }}
+                    >
+                      {sev ? 'КРИТИЧНО' : 'ВНИМАНИЕ'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, fontFamily: fontMono, color: pt.muted }}>
+                    Текущее значение: {a.currentValue} (норма: {a.historicalMean})
+                  </div>
+                  <div style={{ width: '100%', height: 6, background: pt.barTrack, borderRadius: 3, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${barPct}%`,
+                        height: '100%',
+                        background: sev ? '#ef4444' : '#f59e0b',
+                        borderRadius: 3,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!anomalyLoading && anomalyData && !anomalyData.hasAnomalies && (
+          <div style={{ fontSize: 12, fontFamily: fontMono, color: '#22c55e' }}>✓ Показатели в норме</div>
+        )}
+      </div>
+
+      {(aiLoading || aiAnalysis) && (
+        <div
+          style={{
+            background: '#111827',
+            border: '1px solid #1e293b',
+            borderRadius: 12,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 12,
+              fontFamily: fontMono,
+              fontSize: 13,
+              color: '#e2e8f0',
+            }}
+          >
+            <span aria-hidden>🕐</span>
+            Прогноз на 24-48 часов
+          </div>
+
+          {aiLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div
+                style={{
+                  height: 14,
+                  borderRadius: 6,
+                  background: '#1e293b',
+                  width: '55%',
+                  animation: 'forecastSkeleton 1.1s ease-in-out infinite',
+                }}
+              />
+              <div
+                style={{
+                  height: 12,
+                  borderRadius: 6,
+                  background: '#1e293b',
+                  width: '100%',
+                  animation: 'forecastSkeleton 1.1s ease-in-out infinite',
+                }}
+              />
+              <div
+                style={{
+                  height: 12,
+                  borderRadius: 6,
+                  background: '#1e293b',
+                  width: '88%',
+                  animation: 'forecastSkeleton 1.1s ease-in-out infinite',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 48,
+                    borderRadius: 10,
+                    background: '#1e293b',
+                    animation: 'forecastSkeleton 1.1s ease-in-out infinite',
+                  }}
+                />
+                <div
+                  style={{
+                    flex: 1,
+                    height: 48,
+                    borderRadius: 10,
+                    background: '#1e293b',
+                    animation: 'forecastSkeleton 1.1s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {!aiLoading && aiAnalysis?.forecast && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {(() => {
+                const tr = aiAnalysis.forecast!.trend;
+                const trendUi =
+                  tr === 'worsening'
+                    ? { arrow: '↑', label: 'Ухудшение', color: '#ef4444' }
+                    : tr === 'improving'
+                      ? { arrow: '↓', label: 'Улучшение', color: '#22c55e' }
+                      : { arrow: '→', label: 'Стабильно', color: '#94a3b8' };
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: fontMono, fontSize: 13 }}>
+                    <span style={{ color: trendUi.color, fontSize: 18 }}>{trendUi.arrow}</span>
+                    <span style={{ color: trendUi.color }}>{trendUi.label}</span>
+                  </div>
+                );
+              })()}
+
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  color: '#94a3b8',
+                  lineHeight: 1.6,
+                }}
+              >
+                {aiAnalysis.forecast.summary}
+              </p>
+
+              {(aiAnalysis.forecast.predictedValues?.aqi != null ||
+                aiAnalysis.forecast.predictedValues?.congestion != null) && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {aiAnalysis.forecast.predictedValues?.aqi != null && (
+                    <div
+                      style={{
+                        background: pt.kpiCardBg,
+                        border: `1px solid ${pt.kpiCardBorder}`,
+                        borderRadius: 10,
+                        padding: '10px 12px',
+                        minHeight: 56,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ fontSize: 10, color: pt.muted, fontFamily: fontMono, textTransform: 'uppercase' }}>
+                        Прогноз AQI
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: pt.kpiValue, fontFamily: fontMono }}>
+                        {aiAnalysis.forecast.predictedValues!.aqi}
+                      </div>
+                    </div>
+                  )}
+                  {aiAnalysis.forecast.predictedValues?.congestion != null && (
+                    <div
+                      style={{
+                        background: pt.kpiCardBg,
+                        border: `1px solid ${pt.kpiCardBorder}`,
+                        borderRadius: 10,
+                        padding: '10px 12px',
+                        minHeight: 56,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ fontSize: 10, color: pt.muted, fontFamily: fontMono, textTransform: 'uppercase' }}>
+                        Прогноз пробок
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: pt.kpiValue, fontFamily: fontMono }}>
+                        {aiAnalysis.forecast.predictedValues!.congestion}%
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(() => {
+                const risk = aiAnalysis.forecast!.riskLevel || 'Низкий';
+                const rc =
+                  risk.includes('Высок') || risk.toLowerCase().includes('high')
+                    ? { bg: 'rgba(239,68,68,0.2)', border: '#ef4444', color: '#ef4444' }
+                    : risk.includes('Средн') || risk.toLowerCase().includes('medium')
+                      ? { bg: 'rgba(245,158,11,0.2)', border: '#f59e0b', color: '#f59e0b' }
+                      : { bg: 'rgba(34,197,94,0.2)', border: '#22c55e', color: '#22c55e' };
+                return (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: fontMono,
+                        padding: '4px 12px',
+                        borderRadius: 999,
+                        border: `1px solid ${rc.border}`,
+                        background: rc.bg,
+                        color: rc.color,
+                      }}
+                    >
+                      {risk}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#64748b', fontFamily: fontMono }}>
+                      Горизонт: {aiAnalysis.forecast!.timeframe}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {!aiLoading && aiAnalysis && !aiAnalysis.forecast && (
+            <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: fontMono }}>
+              Прогноз не вернулся в ответе модели.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        style={{
+          background: `linear-gradient(135deg, ${pt.aiBoxFrom}, ${pt.aiBoxTo})`,
+          border: `1px solid ${pt.aiBoxBorder}`,
+          borderRadius: 12,
+          padding: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontFamily: fontMono, fontSize: 13, color: theme === 'light' ? '#4f46e5' : '#818cf8' }}>
+            AI Анализ
+          </div>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: pt.aiDot,
+              animation: 'pulseDot 1.2s ease-in-out infinite',
+            }}
+          />
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 12, color: pt.aiSub, lineHeight: 1.5 }}>
+          Получите анализ ситуации и рекомендации по трём ключевым вопросам
+        </div>
+
+        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {['Что происходит?', 'Насколько критично?', 'Что предпринять?'].map((q) => (
+            <div
+              key={q}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 999,
+                background: pt.aiChipBg,
+                border: `1px solid ${pt.aiChipBorder}`,
+                color: pt.aiChipColor,
+                fontSize: 11,
+                fontFamily: fontMono,
+              }}
+            >
+              {q}
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void runAiAnalysis()}
+          disabled={!region || aiLoading}
+          style={{
+            marginTop: 14,
+            width: '100%',
+            background: '#4f46e5',
+            border: '1px solid #4f46e5',
+            color: '#ffffff',
+            fontFamily: fontMono,
+            fontSize: 13,
+            borderRadius: 8,
+            padding: 10,
+            cursor: !region || aiLoading ? 'not-allowed' : 'pointer',
+            opacity: !region || aiLoading ? 0.65 : 1,
+            transition: 'background 140ms ease, transform 140ms ease',
+          }}
+          onMouseEnter={(e) => {
+            if (!region || aiLoading) return;
+            e.currentTarget.style.background = '#6366f1';
+            e.currentTarget.style.transform = 'scale(1.01)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = '#4f46e5';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          Запустить AI анализ →
+        </button>
       </div>
 
       <div
@@ -634,7 +1012,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
                       ? 'rgba(30,41,59,0.9)'
                       : '#ffffff',
                 border: `1px solid ${m.role === 'user' ? pt.aiChipBorder : pt.sectionBorder}`,
-                color: pt.aiHead,
+                color: pt.title,
               }}
             >
               {m.content}
@@ -670,7 +1048,7 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
               borderRadius: 8,
               border: `1px solid ${pt.sectionBorder}`,
               background: pt.sectionBg,
-              color: pt.aiHead,
+              color: pt.title,
               padding: '6px 8px',
               fontSize: 11,
               fontFamily: fontMono,

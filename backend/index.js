@@ -2,11 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import dns from 'dns';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import axios from 'axios';
+import { detectAnomalies } from './anomalyDetector.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Force IPv4 first to avoid ETIMEDOUT on IPv6-only DNS results
 dns.setDefaultResultOrder('ipv4first');
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -15,22 +20,42 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-const SYSTEM_PROMPT = `You are an expert analyst for a Smart City dashboard. I will provide you with data about a region in Kazakhstan for a specific category (transport, ecology, or housing).
+const SYSTEM_PROMPT = `You are an expert analyst for a Smart City dashboard. I will provide you with data about a region in Kazakhstan for a specific category (transport, ecology, safety, or housing).
 You must return a JSON response with exactly the following schema:
 {
   "situation": "Detailed description of the current situation (2-3 sentences)",
   "criticality": "Высокий" | "Средний" | "Низкий",
   "criticalityColor": "critical" | "warning" | "normal",
   "explanation": "Brief explanation of the assessment",
-  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"]
+  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
+  "forecast": {
+    "summary": "2-3 sentence prediction of what will happen in the next 24-48 hours",
+    "trend": "worsening" | "stable" | "improving",
+    "predictedValues": {
+      "aqi": number or null,
+      "congestion": number or null
+    },
+    "riskLevel": "Высокий" | "Средний" | "Низкий",
+    "timeframe": "24 часа" | "48 часов" | "72 часа"
+  }
 }
 
 Important:
 - Your response MUST be valid JSON and contain NO MARKDOWN formatting.
 - The 'criticalityColor' should correspond loosely to the score and status of metrics.
-- Language of the response MUST be Russian.
+- Language of the response MUST be Russian for all human-readable string fields (situation, explanation, recommendations, forecast.summary, forecast.riskLevel, forecast.timeframe).
 - Provide actionable, realistic recommendations suitable for city administration.
-- Use concrete examples based on the provided metrics.`;
+- Use concrete examples based on the provided metrics.
+- If the user context includes detected anomalies (АНОМАЛИИ ОБНАРУЖЕНЫ), you MUST explicitly mention them in the "situation" field in plain language for city administrators (what is unusual and why it matters).
+
+Forecast (field "forecast"):
+- Base the forecast on current metrics, anomaly summary, weather conditions from context, and implied trend direction.
+- If anomalies were detected → set forecast.trend to "worsening" unless weather data strongly justify stability or improvement.
+- If metrics are near baseline and there are no anomalies → forecast.trend "stable".
+- If metrics clearly indicate improvement → forecast.trend "improving".
+- predictedValues: estimate AQI and congestion after ~24 hours as numbers when relevant to the category and data; use null when the metric is not meaningful for the selected category (e.g. congestion null for pure ecology-only focus if appropriate).
+- Be specific and realistic for Kazakhstan's climate seasons and urban context.
+- Choose timeframe as one of: "24 часа", "48 часов", "72 часа" to match the horizon you emphasize in summary.`;
 
 // Coordinates and WAQI slugs of Kazakhstan regions
 const regionMeta = {
@@ -227,6 +252,7 @@ function tomTomBboxAround(lat, lon, deltaDeg = 0.35) {
   return `${minLon},${minLat},${maxLon},${maxLat}`;
 }
 
+<<<<<<< HEAD
 function tomTomIncidentFeatures(data) {
   const inc = data?.incidents;
   if (!inc) return [];
@@ -251,6 +277,45 @@ async function fetchTomTomAccidentCount(lat, lon, apiKey) {
   if (!ok || !data) return { ok: false, count: null };
   // categoryFilter=Accident — все объекты в ответе относятся к ДТП
   return { ok: true, count: tomTomIncidentFeatures(data).length };
+=======
+function getAnomalyMetrics(regionData, category, categoryData) {
+  const ecology = category === 'ecology' ? categoryData : regionData.ecology;
+  const transport = category === 'transport' ? categoryData : regionData.transport;
+
+  const fromMetrics = (slice, matches) => {
+    if (!slice?.metrics) return undefined;
+    const m = slice.metrics.find((x) => matches(x.name.toLowerCase()));
+    return m != null && typeof m.value === 'number' ? m.value : undefined;
+  };
+
+  const aqi =
+    fromMetrics(ecology, (n) => n.includes('aqi')) ?? (typeof ecology?.aqi === 'number' ? ecology.aqi : 0);
+  const co2 =
+    fromMetrics(ecology, (n) => n.includes('co2') || (n.includes('co') && !n.includes('aqi'))) ??
+    (typeof ecology?.co2 === 'number' ? ecology.co2 : 0);
+  const congestion =
+    fromMetrics(transport, (n) => n.includes('пробок') || n.includes('индекс')) ??
+    (typeof transport?.congestion === 'number' ? transport.congestion : 0);
+
+  return { aqi, congestion, co2 };
+}
+
+function generateFallback(regionId) {
+  const idx = parseInt(regionId.replace('KZ-', ''), 10);
+  const rand = seededRand(idx * 7919);
+  return {
+    ecology: {
+      aqi: Math.round(20 + rand() * 130),
+      co2: Math.round(rand() * 12 * 10) / 10
+    },
+    transport: {
+      congestion: Math.round(5 + rand() * 60)
+    },
+    weather: {
+      temp: Math.round(-5 + rand() * 30)
+    }
+  };
+>>>>>>> 460eacc (forest and anomaliya)
 }
 
 app.get('/api/real-data', async (req, res) => {
@@ -480,6 +545,26 @@ Current Weather Conditions:
       }
     }
 
+    const { aqi: anomalyAqi, congestion: anomalyCongestion, co2: anomalyCo2 } = getAnomalyMetrics(
+      regionData,
+      category,
+      categoryData
+    );
+    const anomalyResult = detectAnomalies(regionData.id, {
+      aqi: anomalyAqi,
+      congestion: anomalyCongestion,
+      co2: anomalyCo2,
+    });
+
+    const anomalyContext = anomalyResult.hasAnomalies
+      ? `\nАНОМАЛИИ ОБНАРУЖЕНЫ:\n${anomalyResult.anomalies
+          .map(
+            (a) =>
+              `- ${a.metric}: текущее ${a.currentValue}, норма ${a.historicalMean} (отклонение ${a.deviation}σ)`
+          )
+          .join('\n')}`
+      : '\nАномалий не обнаружено — показатели в пределах нормы.';
+
     // Build the user prompt context
     const metricsText = categoryData.metrics
       ? categoryData.metrics.map(m => `- ${m.name}: ${m.value} ${m.unit || ''} (Status: ${m.status})`).join('\n')
@@ -497,16 +582,20 @@ ${metricsText}
 Overall Score: ${categoryData.score ?? 'N/A'} out of 100
 Overall Status: ${categoryData.status || 'unknown'}
 ${additionalWeatherContext}
+${anomalyContext}
 `;
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+      return res.status(500).json({
+        error:
+          'GEMINI_API_KEY is not set. Add it to backend/.env (see backend/.env.example) and restart the server.',
+      });
     }
 
     // Call Gemini API via axios POST
     const geminiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
@@ -540,6 +629,7 @@ ${additionalWeatherContext}
   }
 });
 
+<<<<<<< HEAD
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, regionData } = req.body;
@@ -619,6 +709,15 @@ ${JSON.stringify(contextPayload, null, 2)}`;
       details: error.response?.data?.error?.message || error.message,
     });
   }
+=======
+app.post('/api/anomalies', (req, res) => {
+  const { regionId, metrics } = req.body;
+  if (!regionId || !metrics) {
+    return res.status(400).json({ error: 'Missing regionId or metrics' });
+  }
+  const result = detectAnomalies(regionId, metrics);
+  return res.json(result);
+>>>>>>> 460eacc (forest and anomaliya)
 });
 
 app.listen(port, () => {
