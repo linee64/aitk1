@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
-import type { ActiveLayer, RegionData, StatusType } from './types';
+import type { ActiveLayer, RegionData, RegionTrendPoint, StatusType } from './types';
 import { useAnomalyDetection } from './hooks/useAnomalyDetection';
 import type { AppTheme } from './theme';
 
@@ -168,7 +168,7 @@ export type AiAnalysisResult = {
   forecast?: AiForecast;
 };
 
-type TrendPoint = { month: string; value: number };
+type TrendPoint = RegionTrendPoint;
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -315,7 +315,10 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
   );
   const { anomalyData, loading: anomalyLoading } = useAnomalyDetection(region?.id ?? null, anomalyMetrics);
 
-  const trend: TrendPoint[] = ((region as any)?.trends?.[activeLayer] ?? []) as TrendPoint[];
+  const trend: TrendPoint[] = useMemo(
+    () => region?.trends?.[activeLayer] ?? [],
+    [region, activeLayer],
+  );
   const avg = useMemo(() => {
     if (!trend.length) return 0;
     return trend.reduce((s, p) => s + p.value, 0) / trend.length;
@@ -562,9 +565,10 @@ export const RegionPanel: React.FC<RegionPanelProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={trend}
-              onMouseMove={(state: any) => {
-                if (state?.isTooltipActive && typeof state?.activeTooltipIndex === 'number') {
-                  setTrendHoverIndex(state.activeTooltipIndex);
+              onMouseMove={(state: unknown) => {
+                const s = state as { isTooltipActive?: boolean; activeTooltipIndex?: number };
+                if (s?.isTooltipActive && typeof s?.activeTooltipIndex === 'number') {
+                  setTrendHoverIndex(s.activeTooltipIndex);
                 } else {
                   setTrendHoverIndex(null);
                 }

@@ -252,7 +252,6 @@ function tomTomBboxAround(lat, lon, deltaDeg = 0.35) {
   return `${minLon},${minLat},${maxLon},${maxLat}`;
 }
 
-<<<<<<< HEAD
 function tomTomIncidentFeatures(data) {
   const inc = data?.incidents;
   if (!inc) return [];
@@ -275,9 +274,9 @@ async function fetchTomTomAccidentCount(lat, lon, apiKey) {
   )}&bbox=${bbox}&fields=${fields}&language=ru-RU&timeValidityFilter=present&categoryFilter=Accident`;
   const { ok, data } = await safeGet(url);
   if (!ok || !data) return { ok: false, count: null };
-  // categoryFilter=Accident — все объекты в ответе относятся к ДТП
   return { ok: true, count: tomTomIncidentFeatures(data).length };
-=======
+}
+
 function getAnomalyMetrics(regionData, category, categoryData) {
   const ecology = category === 'ecology' ? categoryData : regionData.ecology;
   const transport = category === 'transport' ? categoryData : regionData.transport;
@@ -300,22 +299,29 @@ function getAnomalyMetrics(regionData, category, categoryData) {
   return { aqi, congestion, co2 };
 }
 
+function seededRand(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
 function generateFallback(regionId) {
   const idx = parseInt(regionId.replace('KZ-', ''), 10);
   const rand = seededRand(idx * 7919);
   return {
     ecology: {
       aqi: Math.round(20 + rand() * 130),
-      co2: Math.round(rand() * 12 * 10) / 10
+      co2: Math.round(rand() * 12 * 10) / 10,
     },
     transport: {
-      congestion: Math.round(5 + rand() * 60)
+      congestion: Math.round(5 + rand() * 60),
     },
     weather: {
-      temp: Math.round(-5 + rand() * 30)
-    }
+      temp: Math.round(-5 + rand() * 30),
+    },
   };
->>>>>>> 460eacc (forest and anomaliya)
 }
 
 app.get('/api/real-data', async (req, res) => {
@@ -629,7 +635,6 @@ ${anomalyContext}
   }
 });
 
-<<<<<<< HEAD
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, regionData } = req.body;
@@ -641,7 +646,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'messages must be a non-empty array.' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
       return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
     }
@@ -709,7 +714,8 @@ ${JSON.stringify(contextPayload, null, 2)}`;
       details: error.response?.data?.error?.message || error.message,
     });
   }
-=======
+});
+
 app.post('/api/anomalies', (req, res) => {
   const { regionId, metrics } = req.body;
   if (!regionId || !metrics) {
@@ -717,7 +723,6 @@ app.post('/api/anomalies', (req, res) => {
   }
   const result = detectAnomalies(regionId, metrics);
   return res.json(result);
->>>>>>> 460eacc (forest and anomaliya)
 });
 
 app.listen(port, () => {

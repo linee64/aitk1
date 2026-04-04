@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
-import type { Feature, FeatureCollection, Geometry } from 'geojson';
+import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson';
 import L from 'leaflet';
 import type { PathOptions } from 'leaflet';
 
@@ -50,7 +50,7 @@ const normalizeRegionName = (name: string) =>
     .replace(/\s+облысы$/i, '')
     .replace(/\s+облыс$/i, '');
 
-const getFeatureRegionName = (feature: Feature<Geometry, any>) =>
+const getFeatureRegionName = (feature: Feature<Geometry, GeoJsonProperties>) =>
   String(feature?.properties?.name || feature?.properties?.NAME_1 || feature?.properties?.NAME || feature?.id || '');
 
 /** Map GADM-style oblast names to keys that match `normalizeRegionName(mockRegionData.name)` */
@@ -78,7 +78,9 @@ const statusBorderColor = (status: 'high' | 'medium' | 'low') =>
 function PositronTileLayer({ onLoadingChange }: { onLoadingChange: (loading: boolean) => void }) {
   const pendingRef = useRef(0);
   const onLoadingChangeRef = useRef(onLoadingChange);
-  onLoadingChangeRef.current = onLoadingChange;
+  useEffect(() => {
+    onLoadingChangeRef.current = onLoadingChange;
+  }, [onLoadingChange]);
 
   const handlers = useMemo(
     () => ({
@@ -111,11 +113,11 @@ function PositronTileLayer({ onLoadingChange }: { onLoadingChange: (loading: boo
 
 type MapContentProps = {
   theme: AppTheme;
-  geojsonData: FeatureCollection<Geometry, any> | null;
+  geojsonData: FeatureCollection<Geometry, GeoJsonProperties> | null;
   maskPolygon: { outer: [number, number][]; holes: [number, number][][] } | null;
   onRegionSelect: (regionId: string) => void;
   regionByName: Map<string, (typeof mockRegionData)[number]>;
-  getRegionStyleRef: React.MutableRefObject<(feature: Feature<Geometry, any>) => PathOptions>;
+  getRegionStyleRef: React.MutableRefObject<(feature: Feature<Geometry, GeoJsonProperties>) => PathOptions>;
   geoJsonLayerRef: React.MutableRefObject<L.GeoJSON | null>;
   maskLayerRef: React.MutableRefObject<L.Polygon | null>;
   activeLayer: ActiveLayer;
@@ -176,17 +178,18 @@ function MapContent({
     }
 
     if (!geoJsonLayerRef.current) {
-      geoJsonLayerRef.current = L.geoJSON(geojsonData as any, {
+      geoJsonLayerRef.current = L.geoJSON(geojsonData as FeatureCollection<Geometry, GeoJsonProperties>, {
         interactive: true,
         bubblingMouseEvents: false,
-        style: (feature) => getRegionStyleRef.current(feature as Feature<Geometry, any>),
-        onEachFeature: (feature: any, layer: L.Layer) => {
+        style: (feature) =>
+          getRegionStyleRef.current(feature as Feature<Geometry, GeoJsonProperties>),
+        onEachFeature: (feature, layer: L.Layer) => {
           const pathLayer = layer as L.Path;
-          const geoName = getFeatureRegionName(feature as Feature<Geometry, any>);
+          const geoName = getFeatureRegionName(feature as Feature<Geometry, GeoJsonProperties>);
           const mock = regionByName.get(normalizeGeoNameToMockKey(geoName));
 
           pathLayer.on('mouseover', () => {
-            const base = getRegionStyleRef.current(feature as Feature<Geometry, any>);
+            const base = getRegionStyleRef.current(feature as Feature<Geometry, GeoJsonProperties>);
             const border = typeof base.color === 'string' ? base.color : '#3b82f6';
             pathLayer.setStyle({
               ...base,
@@ -196,7 +199,7 @@ function MapContent({
           });
 
           pathLayer.on('mouseout', () => {
-            pathLayer.setStyle(getRegionStyleRef.current(feature as Feature<Geometry, any>));
+            pathLayer.setStyle(getRegionStyleRef.current(feature as Feature<Geometry, GeoJsonProperties>));
           });
 
           pathLayer.on('click', (e: L.LeafletMouseEvent) => {
@@ -211,7 +214,7 @@ function MapContent({
   useEffect(() => {
     if (!geoJsonLayerRef.current) return;
     geoJsonLayerRef.current.setStyle((feature) =>
-      getRegionStyleRef.current(feature as Feature<Geometry, any>),
+      getRegionStyleRef.current(feature as Feature<Geometry, GeoJsonProperties>),
     );
   }, [activeLayer, selectedMockKey, regionByName, theme, geoJsonLayerRef, getRegionStyleRef]);
 
@@ -223,10 +226,9 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   selectedRegion,
   onRegionSelect,
   activeLayer,
-  onActiveLayerChange: _onActiveLayerChange,
 }) => {
   const regionLineWeight = theme === 'light' ? 2.5 : 2;
-  const [geojsonData, setGeojsonData] = useState<FeatureCollection<Geometry, any> | null>(null);
+  const [geojsonData, setGeojsonData] = useState<FeatureCollection<Geometry, GeoJsonProperties> | null>(null);
   const [tilesLoading, setTilesLoading] = useState(false);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const maskLayerRef = useRef<L.Polygon | null>(null);
@@ -261,7 +263,7 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   const maskPolygon = useMemo(() => {
     if (!geojsonData) return null;
     const holes: [number, number][][] = [];
-    for (const f of geojsonData.features as Feature<Geometry, any>[]) {
+    for (const f of geojsonData.features as Feature<Geometry, GeoJsonProperties>[]) {
       const g = f.geometry;
       if (!g) continue;
       if (g.type === 'Polygon') {
@@ -278,7 +280,7 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   }, [geojsonData]);
 
   const getRegionStyle = useCallback(
-    (feature: Feature<Geometry, any>): PathOptions => {
+    (feature: Feature<Geometry, GeoJsonProperties>): PathOptions => {
       const geoName = getFeatureRegionName(feature);
       const mockKey = normalizeGeoNameToMockKey(geoName);
       const w = regionLineWeight;
@@ -317,7 +319,9 @@ const KazakhstanMap: React.FC<KazakhstanMapProps> = ({
   );
 
   const getRegionStyleRef = useRef(getRegionStyle);
-  getRegionStyleRef.current = getRegionStyle;
+  useEffect(() => {
+    getRegionStyleRef.current = getRegionStyle;
+  }, [getRegionStyle]);
 
   const isPanelOpen = !!selectedRegionSafe;
 

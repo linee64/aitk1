@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export type AnomalyItem = {
   metric: string;
@@ -18,9 +18,12 @@ export type AnomalyDetectionResult = {
 export function useAnomalyDetection(regionId: string | null, metrics: Record<string, number>) {
   const [anomalyData, setAnomalyData] = useState<AnomalyDetectionResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const metricsKey = useMemo(() => JSON.stringify(metrics), [metrics]);
 
   useEffect(() => {
     if (!regionId) {
+      // Reset when panel has no region: sync clear is intentional here
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale anomaly data when regionId cleared */
       setAnomalyData(null);
       setLoading(false);
       return;
@@ -34,7 +37,8 @@ export function useAnomalyDetection(regionId: string | null, metrics: Record<str
       .then((r) => r.json())
       .then((data) => setAnomalyData(data))
       .finally(() => setLoading(false));
-  }, [regionId, JSON.stringify(metrics)]);
+  }, [regionId, metricsKey, metrics]);
 
   return { anomalyData, loading };
 }
+

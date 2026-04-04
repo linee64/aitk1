@@ -25,6 +25,10 @@ export interface HousingData extends LayerData {
   failures: number;
 }
 
+export type ActiveLayer = 'ecology' | 'transport' | 'safety' | 'housing';
+
+export type RegionTrendPoint = { month: string; value: number };
+
 export interface RegionData {
   id: string;
   name: string;
@@ -34,6 +38,6 @@ export interface RegionData {
   safety: SafetyData;
   housing: HousingData;
   overallStatus: StatusType;
+  /** 6-month sparkline data per layer (mock / dashboard) */
+  trends?: Partial<Record<ActiveLayer, RegionTrendPoint[]>>;
 }
-
-export type ActiveLayer = 'ecology' | 'transport' | 'safety' | 'housing';

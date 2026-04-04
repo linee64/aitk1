@@ -392,7 +392,7 @@ export const mockRegionData: RegionData[] = regionsInfo.map((info) => {
     overallStatus,
   };
 
-  (region as any).trends = {
+  region.trends = {
     ecology: trendSeries(p.aqi, p.ecoTrend, 0, 200),
     transport: trendSeries(p.congestion, p.transportTrend, 0, 100),
     safety: trendSeries(p.incidents, p.safetyTrend, 0, 350),

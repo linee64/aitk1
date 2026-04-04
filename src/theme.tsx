@@ -57,6 +57,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+/** Hook is intentionally co-located with provider for this small app. */
+// eslint-disable-next-line react-refresh/only-export-components -- useTheme pairs with ThemeProvider
 export function useTheme() {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
